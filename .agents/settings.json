@@ -1,0 +1,68 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm *)",
+      "Bash(mkdir -p *)",
+      "Bash(touch *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(grep -rn *)",
+      "Bash(find app/ *)",
+      "Bash(find lib/ *)",
+      "Bash(find components/ *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git add *)",
+      "Bash(git log --oneline *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard *)",
+      "Bash(npm *)",
+      "Bash(yarn *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo $CLAUDE_TOOL_INPUT | node -e \"const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.file_path||d.path||'')\" 2>/dev/null); if [[ \"$FILE\" == *.tsx ]] || [[ \"$FILE\" == *.ts ]]; then grep -n '#[0-9a-fA-F]\\{3,6\\}\\|rgb(\\|hsl(' \"$FILE\" 2>/dev/null && echo \"COLOR VIOLATION in $FILE\" || true; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo $CLAUDE_TOOL_INPUT | node -e \"const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.file_path||d.path||'')\" 2>/dev/null); if [[ \"$FILE\" == *.tsx ]]; then grep -n '<form' \"$FILE\" 2>/dev/null && echo \"FORM TAG VIOLATION in $FILE\" || true; fi"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== Fello Session Start ===' && echo 'Reading project state...' && git status 2>/dev/null | head -20 && echo '' && echo 'Type errors:' && pnpm tsc --noEmit 2>&1 | grep 'error TS' | wc -l | xargs -I{} echo '{} type errors' && echo '' && [ -f HANDOFF.md ] && echo '⚠️  HANDOFF.md exists — read it before starting.' || echo 'No handoff document.'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ERRORS=$(pnpm tsc --noEmit 2>&1 | grep 'error TS' | wc -l); if [ \"$ERRORS\" -gt 0 ]; then echo \"⚠️  $ERRORS type errors remain. Run /type-check to fix them.\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
