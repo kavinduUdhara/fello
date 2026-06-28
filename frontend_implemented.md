@@ -6,7 +6,7 @@ Based on an analysis of the `fello-frontend` Next.js (App Router) codebase and c
 - **Framework**: Next.js with App Router (`app` directory structure).
 - **Styling**: Tailwind CSS configured with a global stylesheet (`app/globals.css`).
 - **Configuration**: TypeScript (`tsconfig.json`), ESLint (`eslint.config.mjs`), Prettier (`.prettierrc`), and PostCSS (`postcss.config.mjs`).
-- **Backend/Services Integration**: The current cloned frontend is client-driven and does not yet include a checked-in Firebase client; the auth/waitlist flows remain mocked at the UI layer until backend wiring is added.
+- **Backend/Services Integration**: Firebase initialized in `lib/firebase.ts`.
 
 ## 2. Layouts and Routing Strategy
 The application correctly implements the two primary layout strategies defined in the design specifications:
@@ -27,13 +27,7 @@ The application correctly implements the two primary layout strategies defined i
 
 ### Workspace (Full App Layout)
 - **`/org/[orgId]`**: `app/org/[orgId]/page.tsx` (The organization home / chatbot dashboard).
-- **`/org/[orgId]/events`**: `app/org/[orgId]/events/page.tsx` (Events dashboard).
-- **`/org/[orgId]/events/[eventId]`**: `app/org/[orgId]/events/[eventId]/page.tsx` (Single-event workspace).
-- **`/org/[orgId]/members`**: `app/org/[orgId]/members/page.tsx` (Member management).
-- **`/org/[orgId]/settings`**: `app/org/[orgId]/settings/page.tsx` (Organization settings).
-
-### Supporting Bare-Layout Flow
-- **`/waitlist`**: `app/(bare)/waitlist/page.tsx` with `ShareButton` and `UserProfile` support.
+*Note: Sub-routes like `/events`, `/members`, and `/settings` are not yet scaffolded in the App Router directory structure based on the current directory listing.*
 
 ## 4. Components & UI Library
 The frontend includes a robust, custom-built component system heavily inspired by modern UI patterns (like shadcn/ui).
@@ -79,4 +73,8 @@ A comprehensive set of reusable primitive components:
   - `firebase.ts`: Firebase client initialization.
 
 ## Summary of Missing Frontend Features (Next Steps)
-Based on `FELLO_FLOW.md`, the frontend routes now exist for the primary bare/auth flow and the main workspace sub-routes. Remaining work is now mostly implementation polish and any auth/backend wiring required by the docs rather than route scaffolding.
+Based on `FELLO_FLOW.md`, the following frontend structures have not been created yet in the `app/` directory:
+- `/org/[orgId]/events` (All events/projects dashboard)
+- `/org/[orgId]/events/[eventId]` (Specific event dashboard)
+- `/org/[orgId]/members` (Member management interface)
+- `/org/[orgId]/settings` (Organization settings)
