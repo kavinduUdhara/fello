@@ -19,7 +19,7 @@ Any hits are violations. Report file and line number.
 ```bash
 grep -rn "collection(db," app/ lib/ --include="*.ts" --include="*.tsx"
 ```
-For each hit: verify the collection path goes through `organizations/{orgId}/`. Any direct collection access not scoped to orgId is a critical violation.
+For each hit: verify the query filters by `tenantId` and `orgId`. Any query not scoped to `tenantId` and `orgId` is a critical violation.
 
 ### 3. Server actions — check for missing try/catch and raw error exposure
 ```bash

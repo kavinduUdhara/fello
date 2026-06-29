@@ -22,53 +22,57 @@ Firebase Auth handles the OAuth flow and returns:
 - `photoURL` — their profile photo
 - `emailVerified` — whether email is verified
 
-### Step 2 — Domain check (Server Action)
-After Firebase Auth resolves on the client, immediately call a Server Action to check the email domain.
+### Step 2 — Tenant check & Resolution (Server Action)
+After Firebase Auth resolves on the client, immediately call a Server Action to resolve or register the tenant.
+The tenant ID is the full email domain exactly as it comes from OAuth (e.g. `kavindu@my.sliit.lk` belongs to tenant `my.sliit.lk`).
 
 ```
-email domain is unknown
-  → add to waitlist in Firestore
+tenant ID is unknown/not registered
+  → add to waitlist in Firestore (waitlist/{email})
   → redirect to waitlist page
   → stop here
 
-email domain is known (google.com, sliit.lk, iit.ac.lk etc.)
+tenant ID is registered
   → continue to Step 3
 ```
 
-Note: domain restriction is in code but NOT enforced during competition demo. All sign ins proceed.
+Note: waitlist check is bypassed during the competition demo. All sign ins proceed.
 
 ### Step 3 — Create or update user document
 Server Action writes to Firestore `users` collection:
 
 ```
 users/{uid}
-  name: displayName
-  email: email
-  photo: photoURL
-  domain: email domain
-  whatsappNumber: null (until verified)
+  uid: "uid_abc123"
+  email: "kavindu@my.sliit.lk"
+  tenantId: "my.sliit.lk"        // derived from email domain on sign in
+  name: "Kavindu Udhara"
+  photo: "https://..."
+  whatsappNumber: "+94771234567" | null
   whatsappVerified: false
-  lastOpenedOrg: null (until they select one)
-  createdAt: timestamp
+  lastOpenedOrg: "org_8f3k2a9x" | null  // stored as internal UUID, persists across devices
+  createdAt: Timestamp
+  claimsVersion: 3
 ```
 
 ### Step 4 — Build and bake custom claims (Server Action)
 This is the most important step. A Server Action using Firebase Admin SDK:
 
-1. Queries all membership documents for this user
-2. For each direct membership, computes all descendant org nodes they can access via ancestor array inheritance
-3. Builds a complete access map
+1. Queries all membership documents for this user: `memberships/{userId}_{internalOrgId}`
+2. For each direct membership, computes all descendant org nodes they can access via ancestor array inheritance (queries flat `organizations` where `ancestors` contains `orgId`)
+3. Builds a complete access map using internal UUIDs for organization IDs
 4. Writes it into the JWT as custom claims via `admin.auth().setCustomUserClaims(uid, claims)`
 5. Forces a token refresh on the client so the new claims take effect immediately
 
-```
+```javascript
 firebase.auth().currentUser.getIdToken(true)
 ```
 
 ### Step 5 — Redirect based on state
 ```
-user has lastOpenedOrg in Firestore
-  → redirect to /org/[lastOpenedOrgId]
+user has lastOpenedOrg (internal UUID) in Firestore
+  → resolve its tenantId & compute tenantNamespace (domain dots to hyphens)
+  → redirect to /org/[tenantNamespace]/[orgSlug] (e.g. /org/my-sliit-lk/ieee)
 
 user has memberships but no lastOpenedOrg
   → redirect to / (org selector)
@@ -81,45 +85,37 @@ user has no memberships
 
 ## Custom Claims Structure
 
-Claims are baked into the JWT token at sign in. Every subsequent request carries this token — no database reads needed for permission checks.
+Claims are baked into the JWT token at sign in. Every subsequent request carries this token — zero database reads needed for permission checks.
 
 ```typescript
 {
+  tenantId: "my.sliit.lk",        // full email domain
   orgs: {
-    'sliit-ieee': {
-      access: 'full',
-      nodeId: 'branch-root',
+    "org_8f3k2a9x": {
+      access: "full",
+      nodeId: "node_2m5k9x3a",
       capabilities: [
-        'gmail.read', 'gmail.send',
-        'drive.read', 'drive.write',
-        'whatsapp.send', 'whatsapp.manage',
-        'members.view', 'members.manage',
-        'tasks.manage', 'events.manage',
-        'analytics.view', 'finance.view',
-        'forms.create', 'calendar.manage'
+        "drive.read", "drive.write",
+        "whatsapp.send", "whatsapp.manage",
+        "members.manage", "tasks.manage",
+        "events.manage", "analytics.view"
       ]
     },
-    'sliit-ieee-ias': {
-      access: 'readonly',
-      nodeId: 'ias-root',
-      via: 'sliit-ieee',           // inherited from parent
-      capabilities: []              // readonly inherited access has no capabilities
-    },
-    'sliit-ieee-ras': {
-      access: 'readonly',
-      nodeId: 'ras-root',
-      via: 'sliit-ieee',
+    "org_3k9x2a1b": {
+      access: "readonly",          // inherited from parent org
+      nodeId: "node_1a2b3c4d",
+      via: "org_8f3k2a9x",         // which direct membership gave this access
       capabilities: []
     }
   },
   events: {
-    'pti-2026': {
-      access: 'event_only',
-      orgId: 'sliit-ieee-ias'
+    "evt_9k2m3x1a": {
+      access: "event_only",
+      orgId: "org_8f3k2a9x"
     }
   },
   whatsappVerified: true,
-  claimsVersion: 3                  // increments when claims are rebuilt
+  claimsVersion: 3                 // compared against structureVersion for lazy refresh
 }
 ```
 
@@ -130,36 +126,33 @@ Claims are baked into the JWT token at sign in. Every subsequent request carries
 This runs as a Server Action using Firebase Admin SDK. Never runs on the client.
 
 ```
-For each direct membership document of this user:
+For each direct membership document of this user (memberships/{userId}_{orgId}):
 
-  1. Get their direct org access and capabilities
-     → stored in memberships/{userId}_{orgId}
-
-  2. Find all descendant org nodes via ancestor array
+  1. Get their direct org access and capabilities.
+  
+  2. Find all descendant org nodes via ancestors array
      → query organizations where ancestors array contains this orgId
      → these are all orgs below this user in the hierarchy
 
   3. Add each descendant as readonly inherited access
      → access: 'readonly', via: directOrgId, capabilities: []
 
-  4. Repeat for all direct memberships
+  4. Repeat for all direct memberships.
 
-  5. Merge everything into one claims object
+  5. Merge everything into one claims object.
 
-  6. Write to JWT via setCustomUserClaims
+  6. Write to JWT via setCustomUserClaims.
 
-  7. Force token refresh on client
+  7. Force token refresh on client.
 ```
 
-Example: branch chair of `sliit-ieee` automatically gets readonly access to `sliit-ieee-ias`, `sliit-ieee-ras`, `sliit-ieee-wie` etc. because those orgs have `sliit-ieee` in their ancestors array. This happens automatically — no separate membership document needed for each sub-branch.
-
-IAS chair only gets their direct IAS access. They cannot see branch level or sibling sub-branches.
+Access inheritance checks are simple array lookups on internal UUIDs.
 
 ---
 
 ## Access Levels
 
-Four tiers — not hardcoded roles:
+Five tiers:
 
 | Level | What it means |
 |---|---|
@@ -173,9 +166,7 @@ Four tiers — not hardcoded roles:
 
 ## Capability System
 
-Access level controls what you can see. Capabilities control what functions you can use.
-
-Capabilities are stored in the membership document and baked into the JWT. They are not hardcoded to roles — they are dynamic and appendable.
+Access level controls what you can see. Capabilities control what functions you can use. They are stored in the membership document and baked into the JWT.
 
 When an admin describes a role via chatbot — "our secretary also manages Instagram" — Fello appends `social.post` and `social.manage` to their capabilities. The membership document updates, claims rebuild, token refreshes.
 
@@ -184,202 +175,161 @@ When an admin describes a role via chatbot — "our secretary also manages Insta
 ```typescript
 const ROLE_CAPABILITIES = {
   chair: [
-    'gmail.read', 'gmail.send',
     'drive.read', 'drive.write',
     'whatsapp.send', 'whatsapp.manage',
-    'members.view', 'members.manage',
-    'tasks.manage', 'events.manage',
-    'analytics.view', 'finance.view',
-    'forms.create', 'calendar.manage',
-    'social.post'
+    'members.manage', 'tasks.manage',
+    'events.manage', 'analytics.view',
+    'finance.view', 'finance.manage'
   ],
   secretary: [
-    'gmail.read', 'gmail.send',
     'drive.read', 'drive.write',
-    'whatsapp.send',
-    'members.view',
-    'tasks.manage',
-    'forms.create',
-    'calendar.view'
-  ],
-  treasurer: [
-    'drive.read', 'drive.write',
-    'finance.view', 'finance.manage',
-    'members.view',
-    'tasks.view'
-  ],
-  webmaster: [
-    'drive.read',
-    'social.post', 'social.manage',
-    'members.view',
-    'tasks.view'
+    'whatsapp.send', 'tasks.manage',
+    'members.manage'
   ],
   design_lead: [
     'drive.read', 'drive.write',
-    'whatsapp.send',
-    'tasks.manage',
-    'forms.view'
-  ],
-  member: [
-    'drive.read',
-    'tasks.view',
-    'whatsapp.send'
-  ],
-  volunteer: [
-    'tasks.view',
-    'whatsapp.send'
-  ],
-  event_only: [
-    'tasks.view'
+    'whatsapp.send', 'tasks.manage'
   ]
 }
 ```
-
-### Checking capabilities in Server Actions:
-
-```typescript
-function hasCapability(token: DecodedIdToken, orgId: string, capability: string): boolean {
-  return token.orgs?.[orgId]?.capabilities?.includes(capability) ?? false;
-}
-```
-
-### UI shows or hides features based on capabilities:
-
-```typescript
-const capabilities = user.token.orgs[currentOrgId]?.capabilities ?? [];
-
-const canReadGmail = capabilities.includes('gmail.read');
-const canManageFinance = capabilities.includes('finance.manage');
-const canPostSocial = capabilities.includes('social.post');
-```
-
-No hardcoding which role sees what. Just checking the capability list.
-
----
-
-## When Roles Change
-
-When an admin changes someone's role or appends a capability:
-
-1. Update the membership document in Firestore
-2. Rebuild that user's custom claims via Server Action
-3. Increment `claimsVersion` on both the user document and the claims
-4. The user's next request will have stale claims until they refresh
-
-### Lazy refresh pattern
-
-Don't force sign out when roles change. Instead use a version comparison:
-
-- JWT token has `claimsVersion: 3`
-- Org document has `structureVersion: 4`
-- On every page load, compare the two
-- If they don't match, silently refresh the token in the background
-- User never notices — no sign out, no interruption
-
-```typescript
-// On app load or page navigation
-const tokenClaims = await user.getIdTokenResult();
-const org = await getOrgDoc(currentOrgId);
-
-if (tokenClaims.claims.claimsVersion < org.structureVersion) {
-  // Silently rebuild claims in background
-  await rebuildClaims(user.uid);
-  await user.getIdToken(true); // force refresh
-}
-```
-
-This handles the case where:
-- Someone's role changes while they are mid-session
-- A new sub-branch is added to the org
-- A capability is appended or removed
 
 ---
 
 ## Firestore Security Rules
 
-Rules check the JWT token only — zero document reads for permission checks.
+Rules check the JWT token only — zero document reads for permission checks. Flat collection paths are secured using `orgId` and `tenantId`.
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Check if user has any access to this org
-    // (direct membership OR inherited via ancestor)
+    // Check if user has access to this org
+    // Works for both direct membership and inherited access via ancestor array
     function canAccess(orgId) {
       return orgId in request.auth.token.orgs;
     }
 
-    // Get access level for this org
+    // Get access level for this org from token
     function getAccess(orgId) {
       return request.auth.token.orgs[orgId].access;
     }
 
-    // Check specific capability
+    // Check specific capability from token
     function hasCapability(orgId, capability) {
       return capability in request.auth.token.orgs[orgId].capabilities;
     }
 
-    // Check if user can write (not readonly, not event_only)
+    // Check if user can write — not readonly or event_only
     function canWrite(orgId) {
       return canAccess(orgId)
         && getAccess(orgId) != 'readonly'
         && getAccess(orgId) != 'event_only';
     }
 
+    // Check tenant boundary — user's tenant must match document's tenant
+    function sameTenant(tenantId) {
+      return request.auth.token.tenantId == tenantId;
+    }
+
+    // Institutions — readable by anyone in that tenant
+    match /institutions/{domain} {
+      allow read: if request.auth.token.tenantId == domain;
+      allow write: if false; // only backend writes institutions
+    }
+
+    // Organizations — readable if user has access via token
     match /organizations/{orgId} {
-      allow read: if canAccess(orgId);
-      allow write: if canAccess(orgId) && getAccess(orgId) == 'full';
+      allow read: if canAccess(orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(orgId)
+        && getAccess(orgId) == 'full'
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Org nodes — same as organizations
     match /org_nodes/{nodeId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canAccess(resource.data.orgId) && getAccess(resource.data.orgId) == 'full';
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(resource.data.orgId)
+        && getAccess(resource.data.orgId) == 'full'
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Memberships — readable by org members
     match /memberships/{membershipId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canAccess(resource.data.orgId) && getAccess(resource.data.orgId) == 'full';
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(resource.data.orgId)
+        && getAccess(resource.data.orgId) == 'full'
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Users — users can read and write their own document only
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Events — readable by org members, writable by coordinators and above
     match /events/{eventId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canWrite(resource.data.orgId);
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if canWrite(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Tasks — readable and writable by org members
     match /tasks/{taskId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canWrite(resource.data.orgId);
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if canWrite(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Outreach — requires finance capability
     match /outreach/{outreachId} {
       allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId)
         && hasCapability(resource.data.orgId, 'finance.view');
       allow write: if canWrite(resource.data.orgId)
+        && sameTenant(resource.data.tenantId)
         && hasCapability(resource.data.orgId, 'finance.manage');
     }
 
+    // Automations — readable by members, writable by full access only
     match /automations/{automationId} {
-      allow read: if canAccess(resource.data.orgId);
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
       allow write: if canAccess(resource.data.orgId)
-        && getAccess(resource.data.orgId) == 'full';
+        && getAccess(resource.data.orgId) == 'full'
+        && sameTenant(resource.data.tenantId);
     }
 
+    // Event summaries — readable by org members, never writable from client
     match /event_summaries/{summaryId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if false; // only Cloud Run backend writes summaries
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if false; // backend only
     }
 
-    // WhatsApp messages — never accessible from client
-    match /whatsapp_messages/{messageId} {
-      allow read: if false;
-      allow write: if false;
+    // WhatsApp groups — readable by org members
+    match /whatsapp_groups/{groupId} {
+      allow read: if canAccess(resource.data.orgId)
+        && sameTenant(resource.data.tenantId);
+      allow write: if false; // backend only
     }
 
-    // OTP verifications — user can only read their own
+    // OTP verifications — never readable from client
     match /otp_verifications/{number} {
       allow read: if false;
-      allow write: if false; // only backend writes OTPs
+      allow write: if false; // backend only
+    }
+
+    // Waitlist — never readable from client
+    match /waitlist/{email} {
+      allow read: if false;
+      allow write: if false; // backend only
     }
   }
 }
@@ -389,7 +339,7 @@ service cloud.firestore {
 
 ## WhatsApp OTP Verification
 
-Every user must verify their personal WhatsApp number. This links their WhatsApp identity to their Fello account — messages they send in event groups are attributed to their real name and role.
+Every user must verify their personal WhatsApp number. This links their WhatsApp identity to their Fello account.
 
 ### Flow:
 
@@ -405,207 +355,57 @@ Every user must verify their personal WhatsApp number. This links their WhatsApp
 10. Custom claims rebuilt with `whatsappVerified: true`
 11. Token refreshed
 
-### Rate limiting:
-- Maximum 3 OTP requests per WhatsApp number per hour
-- Prevents abuse and protects Baileys gateway number from being flagged
-
-### Can be skipped:
-- User can skip WhatsApp verification
-- Shown again every session until verified
-- Some features unavailable without verification — agent cannot attribute their WhatsApp messages
-
 ---
 
 ## Multiple Org Context Switching
 
-A user can belong to multiple orgs. Their JWT claims contain all of them.
+A user can belong to multiple orgs. Their JWT claims contain all of them (keyed by internal UUID).
 
-On first login → `/` org selector → user picks one → stored as `lastOpenedOrg` on Firestore user document → redirect to `/org/[orgId]`.
-
-`lastOpenedOrg` is stored in Firestore not localStorage — persists across devices. User switches from phone to laptop and lands in the right org automatically.
-
-### Switching orgs:
-- Profile menu in sidebar has org switcher
-- User selects different org
-- `lastOpenedOrg` updated in Firestore
-- URL changes to `/org/[newOrgId]`
-- No sign out needed — all orgs already in JWT claims
+On first login → `/` org selector → user picks one → stored as `lastOpenedOrg` on Firestore user document → computes namespace and slug, redirects to `/org/[tenantNamespace]/[slug]`.
 
 ### URL per context:
+Instead of exposing internal UUIDs like `org_8f3k2a9x` in the URL, Fello uses deterministic tenant-namespace/slug URL resolution:
 ```
-app.fello.lk/org/sliit-ieee          → branch level
-app.fello.lk/org/sliit-ieee-ias      → IAS chapter
-app.fello.lk/org/sliit-mozilla       → Mozilla club
+app.fello.lk/org/my-sliit-lk/ieee          → IEEE Student Branch of my.sliit.lk
+app.fello.lk/org/nsbm-ac-lk/ieee           → IEEE Student Branch of nsbm.ac.lk
 ```
 
-Bookmarkable. Shareable. Browser history works naturally.
+Resolving URL slug to internal ID is done in a Server Action:
+```typescript
+// Deterministic resolution: tenantNamespace (URL) → tenantId (Firestore) → orgSlug → internal UUID
+async function resolveOrgPath(tenantNamespace: string, orgSlug: string): Promise<string | null> {
+  // Step 1 — Reverse transformation: replace hyphens back with dots to get tenantId (domain)
+  const tenantId = tenantNamespace.toLowerCase().replace(/-/g, '.');
+
+  // Step 2 — resolve org slug within that tenant domain
+  const org = await db.collection('organizations')
+    .where('tenantId', '==', tenantId)
+    .where('slug', '==', orgSlug)
+    .where('verified', '==', true)
+    .limit(1)
+    .get();
+
+  if (org.empty) return null;
+  return org.docs[0].id; // internal UUID
+}
+```
 
 ---
 
 ## Tenant Isolation — Three Layers
 
 ### Layer 1 — JWT token
-User's JWT only contains orgs they belong to. A request from an IAS member for IEEE RAS data will not have RAS in their token claims. The check fails before any database call.
+User's JWT only contains orgs they belong to (internal UUIDs). A request from an unauthorized tenant fails token checks before any database query.
 
 ### Layer 2 — Firestore security rules
-Even if someone manipulates the frontend to make a request, the database rejects it. `canAccess(orgId)` checks the JWT token directly. No document reads. Database-level enforcement.
+Firestore security rules enforce same-tenant boundary (`sameTenant`) and membership checks (`canAccess`) on flat root-level collections.
 
 ### Layer 3 — Query scoping
-Every single Firestore query in Server Actions always includes `orgId` as a filter. Cross-org data is structurally impossible to fetch even if a bug exists in application code.
-
+Every Firestore query in Server Actions includes `tenantId` and `orgId` as filters:
 ```typescript
-// ALWAYS do this — never query without orgId
 const tasks = await db.collection('tasks')
+  .where('tenantId', '==', tenantId)
   .where('orgId', '==', currentOrgId)
   .where('eventId', '==', eventId)
   .get();
 ```
-
----
-
-## Server Actions vs Cloud Run for Auth
-
-### Use Next.js Server Actions for:
-- Domain check after sign in
-- Building and writing custom claims
-- Creating user document in Firestore
-- Checking capabilities before rendering UI
-- Lazy token refresh on page load
-- WhatsApp OTP generation and verification
-- All internal dashboard operations
-
-Server Actions run on the server with Firebase Admin SDK access. Admin credentials never exposed to the client.
-
-### Use Cloud Run API for:
-- WhatsApp message receiver from GCE VM
-- Apps Script webhook
-- Gemini processing pipeline
-- Anything called from outside the Next.js app
-
----
-
-## Membership Document Structure
-
-Document ID pattern: `{userId}_{orgId}` — fast single-document lookups, no queries needed.
-
-```
-memberships/{userId}_{orgId}
-  userId: string
-  orgId: string
-  nodeId: string           // which specific node in the org tree
-  role: string             // descriptive role name e.g. "design_lead"
-  access: string           // full / coordinator / team / readonly / event_only
-  capabilities: string[]   // array of permitted function strings
-  addedBy: string          // uid of admin who added them
-  addedAt: timestamp
-```
-
-For event-only members (volunteers, delegates):
-
-```
-event_members/{userId}_{eventId}
-  userId: string
-  eventId: string
-  orgId: string
-  role: string             // volunteer / delegate
-  access: 'event_only'
-  capabilities: ['tasks.view']
-  addedAt: timestamp
-```
-
----
-
-## Important Rules
-
-- Never expose Firebase Admin SDK credentials to the client
-- Never check permissions in client components — always Server Actions or Firestore rules
-- Never query Firestore without orgId as a filter
-- Never hardcode roles — always use capability arrays
-- Always force token refresh after claims change
-- Always store lastOpenedOrg in Firestore not localStorage
-- Claims have a 1000 byte limit — keep them lean, store only orgId, access, nodeId, capabilities
-
-
----
-
-## Multi-Tenant Architecture
-
-Every organization in Fello is a completely isolated tenant. SLIIT IEEE cannot see anything from NSBM IEEE. A user from one tenant cannot access another tenant's data under any circumstances.
-
-### Every org is a node in a tree
-
-The hierarchy is dynamic — not hardcoded. Every organization is stored as a node with a `parentId` and an `ancestors` array. This handles everything from a flat single club to a deep multi-level hierarchy.
-
-```
-organizations/
-  sliit-ieee/
-    parentId: null
-    ancestors: []              ← root node, no parents
-
-  sliit-ieee-ias/
-    parentId: 'sliit-ieee'
-    ancestors: ['sliit-ieee']  ← one level deep
-
-  sliit-mozilla/
-    parentId: null
-    ancestors: []              ← standalone, no children
-```
-
-The `ancestors` array is computed and stored when a node is created. It never changes unless the node is moved. This means access inheritance checks are a simple array lookup — no tree traversal needed at query time.
-
-### Access inheritance flows downward only
-
-If you belong to `sliit-ieee`, you automatically get readonly access to every org that has `sliit-ieee` in its ancestors array. You cannot see sideways — IAS cannot see RAS. You cannot see upward — IAS chair cannot see branch level data.
-
-This is enforced in three places:
-1. Claims building at sign in — inherited orgs are baked into the JWT with `access: 'readonly'`
-2. Firestore security rules — `canAccess(orgId)` checks token only
-3. Query scoping — every query filters by `orgId`
-
-### Adding a new sub-branch
-
-When a new sub-branch is created under `sliit-ieee`:
-
-1. New org node is created with `parentId: 'sliit-ieee'` and `ancestors: ['sliit-ieee']`
-2. Org's `structureVersion` increments
-3. Next time the branch chair loads the app, lazy refresh detects version mismatch
-4. Claims rebuild — new sub-branch appears in their token as readonly
-5. They immediately have visibility into the new sub-branch with no manual permission grant
-
-### Standalone organizations
-
-A Mozilla club with no sub-branches is just a root node with `parentId: null` and `ancestors: []`. Same system, flat shape. No sub-branches means no inherited access to compute. Simple and fast.
-
-### Tenant data separation in Firestore
-
-Every document in every collection carries its `orgId` directly. No document exists without an orgId. This means:
-
-- Security rules can check orgId on every document without joins
-- Queries always filter by orgId — cross-tenant fetches are structurally impossible
-- Deleting a tenant means deleting all documents where `orgId == deletedOrgId`
-
-### Tenant data separation in Cloud SQL
-
-Every row in every table carries `org_id` as a non-nullable column. Every query from the backend always includes `WHERE org_id = $1` where `$1` comes from the verified JWT token — never from the client request body.
-
-```sql
--- ALWAYS like this — org_id from verified token, never from client
-SELECT * FROM whatsapp_messages
-WHERE org_id = $1        -- from JWT
-AND event_id = $2        -- from request
-ORDER BY timestamp DESC
-LIMIT 50;
-```
-
-Client cannot fake the org_id because it comes from the server-side JWT verification, not from anything the client sends.
-
-### What one tenant can never do
-
-- Read another tenant's Firestore documents
-- Read another tenant's Cloud SQL rows
-- Access another tenant's Google Drive folders
-- Send messages to another tenant's WhatsApp groups
-- See another tenant's members, events, tasks, or files
-
-This is not just UI-level hiding. It is enforced at the database level, the token level, and the query level simultaneously. All three layers must be bypassed for a cross-tenant access to succeed — which is practically impossible.
-
