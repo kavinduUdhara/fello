@@ -6,30 +6,32 @@ allowed-tools: Read Grep
 
 ## Tenant isolation is non-negotiable
 
-Every Firestore query must be scoped to `orgId`. A query without an `orgId` filter is a data breach.
+Every Firestore query must filter by `tenantId` and `orgId`. A query without these filters is a data breach.
 
 ## Pattern for client-side queries (React hooks / real-time listeners)
 
 ```typescript
-// CORRECT — always filter by orgId
+// CORRECT — always filter by tenantId and orgId
 const q = query(
-  collection(db, 'organizations', orgId, 'events'),
+  collection(db, 'events'),
+  where('tenantId', '==', tenantId),
+  where('orgId', '==', orgId),
   where('status', '==', 'active'),
   orderBy('date', 'desc')
 );
 
-// WRONG — missing orgId scope
+// WRONG — missing tenantId or orgId scope
 const q = query(collection(db, 'events'), where('status', '==', 'active'));
 ```
 
 ## Pattern for server actions (Admin SDK)
 
 ```typescript
-// CORRECT
+// CORRECT — flat collections with where filters
 const snapshot = await adminDb
-  .collection('organizations')
-  .doc(orgId)
   .collection('events')
+  .where('tenantId', '==', tenantId)
+  .where('orgId', '==', orgId)
   .get();
 
 // WRONG
@@ -37,8 +39,8 @@ const snapshot = await adminDb.collection('events').get();
 ```
 
 ## Before writing any query, answer these three questions:
-1. Is this query scoped to `organizations/{orgId}/...`? If not, fix it.
-2. Does the calling code validate that the user's JWT claim `orgId` matches the `orgId` being queried?
+1. Is this query scoped by `tenantId` and `orgId` filters on a flat collection? If not, fix it.
+2. Does the calling code validate that the user's JWT claims `tenantId` and `orgId` match the ones being queried?
 3. Is the Firestore security rule for this collection in `firestore.rules`?
 
 ## Check current security rules coverage:

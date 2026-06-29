@@ -166,30 +166,32 @@ allowed-tools: Read Grep
 
 ## Tenant isolation is non-negotiable
 
-Every Firestore query must be scoped to `orgId`. A query without an `orgId` filter is a data breach.
+Every Firestore query must filter by `tenantId` and `orgId`. A query without these filters is a data breach.
 
 ## Pattern for client-side queries (React hooks / real-time listeners)
 
 ```typescript
-// CORRECT — always filter by orgId
+// CORRECT — always filter by tenantId and orgId
 const q = query(
-  collection(db, 'organizations', orgId, 'events'),
+  collection(db, 'events'),
+  where('tenantId', '==', tenantId),
+  where('orgId', '==', orgId),
   where('status', '==', 'active'),
   orderBy('date', 'desc')
 );
 
-// WRONG — missing orgId scope
+// WRONG — missing tenantId or orgId scope
 const q = query(collection(db, 'events'), where('status', '==', 'active'));
 ```
 
 ## Pattern for server actions (Admin SDK)
 
 ```typescript
-// CORRECT
+// CORRECT — flat collections with where filters
 const snapshot = await adminDb
-  .collection('organizations')
-  .doc(orgId)
   .collection('events')
+  .where('tenantId', '==', tenantId)
+  .where('orgId', '==', orgId)
   .get();
 
 // WRONG
@@ -197,8 +199,8 @@ const snapshot = await adminDb.collection('events').get();
 ```
 
 ## Before writing any query, answer these three questions:
-1. Is this query scoped to `organizations/{orgId}/...`? If not, fix it.
-2. Does the calling code validate that the user's JWT claim `orgId` matches the `orgId` being queried?
+1. Is this query scoped by `tenantId` and `orgId` filters on a flat collection? If not, fix it.
+2. Does the calling code validate that the user's JWT claims `tenantId` and `orgId` match the ones being queried?
 3. Is the Firestore security rule for this collection in `firestore.rules`?
 
 ## Check current security rules coverage:
@@ -230,24 +232,24 @@ import type { ActionResult } from '@/lib/types';
 
 export async function myAction(
   param: string,
-  orgId: string  // Always receive orgId explicitly — never trust client state
+  tenantId: string, // Always receive tenantId explicitly from verified token
+  orgId: string     // Always receive orgId explicitly from verified token
 ): Promise<ActionResult<ReturnType>> {
   try {
     // 1. Validate inputs
-    if (!param || !orgId) {
+    if (!param || !tenantId || !orgId) {
       return { data: null, error: 'Missing required fields' };
     }
 
-    // 2. Verify orgId matches caller's JWT claim
-    // (This is done at the API route level — in server actions called from
-    //  authenticated pages, the orgId comes from the session token, not user input)
-
-    // 3. Perform the operation
+    // 2. Perform the operation on flat collections
     const result = await adminDb
-      .collection('organizations')
-      .doc(orgId)
       .collection('...')
-      .add({ ... });
+      .add({
+        param,
+        tenantId,
+        orgId,
+        createdAt: adminDb.firestore.Timestamp.now()
+      });
 
     return { data: { id: result.id }, error: null };
 
@@ -422,32 +424,31 @@ You are a Firestore and multi-tenant architecture specialist for Fello.
 
 Fello's differentiation from competitors is that organizations own their data — no cross-tenant access is ever possible. Every data access pattern you write must enforce this at the Firestore security rules level AND at the query level.
 
-## Data hierarchy
+## Data Model (Flat Collections)
 
-```
-organizations/{orgId}/
-  members/{memberId}
-  events/{eventId}/
-    tasks/{taskId}
-    documents/{docId}
-    outreach/{outreachId}
-    whatsapp_groups/{groupId}
-  settings/{doc}
-```
+Instead of nesting subcollections, Fello uses flat collections. Tenant boundaries are enforced on every document using `tenantId` (the domain) and `orgId` (internal UUID).
 
-Every document that lives inside this hierarchy must have `orgId` as a top-level field (for security rules) and an `ancestors` array (for hierarchical checks).
+- `institutions/{domain}`: Keyed by domain.
+- `organizations/{internalId}`: Keyed by internal UUID.
+- `org_nodes/{internalId}`: Sub-branches, departments, or teams.
+- `memberships/{userId}_{internalOrgId}`: User memberships.
+- `users/{uid}`: Profile information.
+- `events/{internalId}`: Event documents.
+- `tasks/{internalId}`: Task documents.
+- `outreach/{internalId}`: Outreach logs.
+- `automations/{internalId}`: Trigger-specific automations.
+
+Every document must carry its `tenantId` and `orgId` fields.
 
 ## Security rules principles
 
-1. `belongsToOrg(orgId)` — checks `request.auth.token.orgId == orgId`. This is the base check for every read.
-2. `isAdmin(orgId)` — extends `belongsToOrg` with role check.
-3. No client can ever write to a path outside their `orgId`.
-4. Deletes are admin-only or server-only (never client-callable for org-level data).
+1. `sameTenant(tenantId)` — checks `request.auth.token.tenantId == tenantId`.
+2. `canAccess(orgId)` — checks `orgId in request.auth.token.orgs`.
+3. `canWrite(orgId)` — checks role and capability.
 
 ## Before finishing any task:
 1. Read the current `firestore.rules` and verify coverage for any new collections
-2. Run: `grep -n "orgId" firestore.rules | wc -l` — if it equals the number of match blocks, you're good
-3. Confirm every new query is scoped to `organizations/{orgId}/...`
+2. Confirm every query filters by `tenantId` and `orgId`.
 ```
 
 ---
@@ -478,7 +479,7 @@ Any hits are violations. Report file and line number.
 ```bash
 grep -rn "collection(db," app/ lib/ --include="*.ts" --include="*.tsx"
 ```
-For each hit: verify the collection path goes through `organizations/{orgId}/`. Any direct collection access not scoped to orgId is a critical violation.
+For each hit: verify the query filters by `tenantId` and `orgId`. Any query not scoped to `tenantId` and `orgId` is a critical violation.
 
 ### 3. Server actions — check for missing try/catch and raw error exposure
 ```bash

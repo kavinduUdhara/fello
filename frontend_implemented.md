@@ -9,9 +9,9 @@ Based on an analysis of the `fello-frontend` Next.js (App Router) codebase and c
 - **Backend/Services Integration**: Firebase initialized in `lib/firebase.ts`.
 
 ## 2. Layouts and Routing Strategy
-The application correctly implements the two primary layout strategies defined in the design specifications:
+The application implements two primary layout strategies (to be adapted for tenantNamespace/slug routing):
 - **Bare Layout (`app/(bare)/layout.tsx`)**: Used for authentication, setup, and organization onboarding flows. It lacks a sidebar and complex navigation to maintain focus.
-- **Full App Layout (`app/org/[orgId]/layout.tsx`)**: The primary workspace layout containing the application sidebar, navigation menus, and context for an active organization.
+- **Full App Layout (`app/org/[tenantNamespace]/[orgSlug]/layout.tsx`)**: The primary workspace layout containing the application sidebar, navigation menus, and context for an active organization.
 
 ## 3. Implemented Routes & Pages
 
@@ -26,7 +26,7 @@ The application correctly implements the two primary layout strategies defined i
 - **`/org/new`**: `app/(bare)/org/new/page.tsx` (For creating a new organization).
 
 ### Workspace (Full App Layout)
-- **`/org/[orgId]`**: `app/org/[orgId]/page.tsx` (The organization home / chatbot dashboard).
+- **`/org/[tenantNamespace]/[orgSlug]`**: `app/org/[tenantNamespace]/[orgSlug]/page.tsx` (The organization home / chatbot dashboard).
 *Note: Sub-routes like `/events`, `/members`, and `/settings` are not yet scaffolded in the App Router directory structure based on the current directory listing.*
 
 ## 4. Components & UI Library
@@ -74,7 +74,7 @@ A comprehensive set of reusable primitive components:
 
 ## Summary of Missing Frontend Features (Next Steps)
 Based on `FELLO_FLOW.md`, the following frontend structures have not been created yet in the `app/` directory:
-- `/org/[orgId]/events` (All events/projects dashboard)
-- `/org/[orgId]/events/[eventId]` (Specific event dashboard)
-- `/org/[orgId]/members` (Member management interface)
-- `/org/[orgId]/settings` (Organization settings)
+- `/org/[tenantNamespace]/[orgSlug]/events` (All events/projects dashboard)
+- `/org/[tenantNamespace]/[orgSlug]/events/[eventId]` (Specific event dashboard)
+- `/org/[tenantNamespace]/[orgSlug]/members` (Member management interface)
+- `/org/[tenantNamespace]/[orgSlug]/settings` (Organization settings)

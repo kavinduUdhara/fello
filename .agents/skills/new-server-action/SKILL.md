@@ -16,24 +16,24 @@ import type { ActionResult } from '@/lib/types';
 
 export async function myAction(
   param: string,
-  orgId: string  // Always receive orgId explicitly — never trust client state
+  tenantId: string, // Always receive tenantId explicitly from verified token
+  orgId: string     // Always receive orgId explicitly from verified token
 ): Promise<ActionResult<ReturnType>> {
   try {
     // 1. Validate inputs
-    if (!param || !orgId) {
+    if (!param || !tenantId || !orgId) {
       return { data: null, error: 'Missing required fields' };
     }
 
-    // 2. Verify orgId matches caller's JWT claim
-    // (This is done at the API route level — in server actions called from
-    //  authenticated pages, the orgId comes from the session token, not user input)
-
-    // 3. Perform the operation
+    // 2. Perform the operation on flat collections
     const result = await adminDb
-      .collection('organizations')
-      .doc(orgId)
       .collection('...')
-      .add({ ... });
+      .add({
+        param,
+        tenantId,
+        orgId,
+        createdAt: adminDb.firestore.Timestamp.now()
+      });
 
     return { data: { id: result.id }, error: null };
 

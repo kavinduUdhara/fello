@@ -121,7 +121,7 @@ Never use HTML `<form>` tags. Use `onClick` / `onChange` handlers on buttons and
 1. User enters phone number → receives WhatsApp OTP
 2. OTP verified → Firebase Auth custom token created server-side
 3. Firebase Auth signs in with custom token → issues Firebase ID token
-4. On sign-in, Firebase Auth custom claims are baked into the JWT: `{ orgId, role, tenantId }`
+4. On sign-in, Firebase Auth custom claims are baked into the JWT: tenantId (domain), orgs map (keyed by internal UUIDs), events map, whatsappVerified, and claimsVersion.
 5. All permission checks use these JWT claims — **zero Firestore reads for permission checks**
 
 ### 4.2 Why WhatsApp OTP (not reverse-message flow)
@@ -130,11 +130,26 @@ WhatsApp OTP was chosen over the reverse-message flow (user sends a message to a
 
 ### 4.3 Custom Claims Structure
 
+Baked into JWT at sign in — zero DB reads on subsequent requests.
 ```typescript
 interface FelloCustomClaims {
-  orgId: string;       // The organization the user belongs to
-  role: 'admin' | 'member' | 'viewer';
-  tenantId: string;    // Matches orgId for tenant isolation
+  tenantId: string;        // full email domain (e.g. "my.sliit.lk")
+  orgs: {
+    [internalOrgId: string]: { // internal UUID (e.g. "org_8f3k2a9x")
+      access: "full" | "coordinator" | "team" | "readonly" | "event_only";
+      nodeId: string;      // which specific node in the hierarchy
+      capabilities: string[];
+      via?: string;        // parent org ID if inherited access
+    }
+  };
+  events: {
+    [internalEventId: string]: {
+      access: "event_only";
+      orgId: string;       // internal UUID of parent org
+    }
+  };
+  whatsappVerified: boolean;
+  claimsVersion: number;
 }
 ```
 
@@ -148,112 +163,116 @@ Auth server actions live in `lib/actions/auth.ts`. Keep all Firebase Admin SDK c
 
 This is Fello's primary product moat. Every data access pattern must respect it.
 
-### 5.1 Tenant Isolation Model
+### 5.1 Tenant and Org Identity
 
-- Each organization is a **tenant**. Their data is completely isolated from other tenants.
-- Firestore security rules must enforce tenant boundaries using the `tenantId` from JWT claims.
-- No cross-tenant data leakage is acceptable under any circumstances.
-- Organizations own their data — this is the key differentiator from WhatsApp AI agent products that store data centrally.
+- **Tenant**: Every user belongs to a tenant determined by their email domain (e.g., `my.sliit.lk`, `nsbm.ac.lk`). The full domain is the tenant ID, used for data isolation and security.
+- **Namespace**: Derived automatically from the email domain by replacing all dots with hyphens and lowercasing everything (e.g., `my.sliit.lk` becomes `my-sliit-lk`). Computed deterministically on the server/client whenever needed. It is only ever used for URL routing and is never stored in Firestore documents.
+- **Slug**: Orgs have a short slug (e.g., `ieee`) unique within the tenant only. Two tenants can both have `ieee`.
+- **URL Path**: `/org/[tenant-namespace]/[org-slug]` (e.g., `/org/my-sliit-lk/ieee`).
+- **Internal UUID**: Orgs have an internal UUID (`org_8f3k2a9x`) used in all documents, security rules, and membership checks. Slugs and namespaces are just display aliases.
 
-### 5.2 Firestore Data Hierarchy
+### 5.2 Firestore Data Model (Flat Collections)
 
-```
-organizations/{orgId}/               ← Tenant root
-  members/{memberId}
-  events/{eventId}/
-    tasks/{taskId}
-    documents/{docId}
-    whatsapp_groups/{groupId}
-  settings/
-```
+We use flat collections at the root level rather than nested subcollections. Tenant boundaries are enforced on every document using `tenantId` (the email domain) and `orgId` (internal UUID).
 
-Ancestor arrays must be stored on every document to enable efficient Firestore security rule checks:
-```typescript
-// Example event document
-{
-  id: string,
-  orgId: string,           // Always present for security rules
-  ancestors: [orgId],      // Ancestor chain for hierarchical checks
-  name: string,
-  ...
-}
-```
+- `institutions/{domain}`: Keyed by domain.
+- `organizations/{internalId}`: Keyed by internal UUID.
+- `org_nodes/{internalId}`: Any sub-branch, team, or department.
+- `memberships/{userId}_{internalOrgId}`: Composite ID for single read lookup.
+- `users/{uid}`: Authenticated user profiles.
+- `events/{internalId}`: Keyed by internal UUID.
+- `tasks/{internalId}`: Keyed by internal UUID.
+- `outreach/{internalId}`: Sponsor/speaker outreach logs.
+- `automations/{internalId}`: Trigger-specific automation configs.
+- `event_summaries/{eventId}`: Generated event wrap-ups.
+- `whatsapp_groups/{internalId}`: Managed WhatsApp group registries.
+- `otp_verifications/{whatsappNumber}`: OTP verification records.
+- `waitlist/{email}`: Request list for new institutions.
 
 ### 5.3 PostgreSQL (Cloud SQL) Tenant Isolation
 
-Every table that stores WhatsApp messages or document indexes must have an `org_id` column. Row-Level Security (RLS) must be enabled and policies must enforce `org_id` matching the authenticated tenant.
-
-```sql
--- Example RLS policy
-CREATE POLICY tenant_isolation ON whatsapp_messages
-  USING (org_id = current_setting('app.current_org_id'));
-```
+Every table that stores WhatsApp messages or document indexes must have an `org_id` column. Row-Level Security (RLS) must be enabled and policies must enforce `org_id` matching the authenticated tenant/org.
 
 ---
 
 ## 6. Firestore Data Model Details
 
-### organizations
+### institutions/{domain}
 ```typescript
 {
-  id: string,
-  name: string,
-  slug: string,
-  createdAt: Timestamp,
-  adminUid: string,
-  whatsappNumber: string,   // The dedicated Baileys number for this org
-  settings: {
-    timezone: string,
-    language: string,
-  }
-}
-```
-
-### members
-```typescript
-{
-  id: string,              // Firebase UID
-  orgId: string,
+  domain: string,          // Document ID (e.g. "my.sliit.lk"), never changes. URL namespace is computed: domain.replaceAll('.', '-')
   displayName: string,
-  phoneNumber: string,     // WhatsApp number (E.164 format)
-  role: 'admin' | 'member' | 'viewer',
-  joinedAt: Timestamp,
-  whatsappJid: string,     // Baileys JID format: 94771234567@s.whatsapp.net
-}
-```
-
-### events
-```typescript
-{
-  id: string,
-  orgId: string,
-  ancestors: [orgId],
-  name: string,
-  description: string,
-  date: Timestamp,
-  status: 'planning' | 'active' | 'completed' | 'cancelled',
-  createdBy: string,       // Firebase UID
+  verified: boolean,
   createdAt: Timestamp,
-  whatsappGroups: string[], // Array of group JIDs managed for this event
-  coordinators: string[],   // Firebase UIDs
+  structureVersion: number
 }
 ```
 
-### tasks
+### organizations/{internalId}
 ```typescript
 {
-  id: string,
-  orgId: string,
-  eventId: string,
-  ancestors: [orgId, eventId],
-  title: string,
-  description: string,
-  assignedTo: string[],    // Firebase UIDs
-  status: 'todo' | 'in_progress' | 'done' | 'blocked',
-  dueDate: Timestamp | null,
+  id: string,              // Internal UUID, Document ID (e.g. "org_8f3k2a9x")
+  tenantId: string,        // Full email domain (e.g. "my.sliit.lk")
+  slug: string,            // Unique within this tenant only (e.g., "ieee")
+  name: string,
+  logo: string,
+  parentId: string | null,
+  ancestors: string[],     // computed on creation
+  verified: boolean,
+  verificationStatus: "pending" | "approved" | "rejected",
   createdBy: string,
   createdAt: Timestamp,
-  sourceMessageId: string | null,  // Link back to WhatsApp message that spawned this task
+  structureVersion: number
+}
+```
+
+### memberships/{userId}_{internalOrgId}
+```typescript
+{
+  userId: string,
+  orgId: string,          // Internal UUID
+  tenantId: string,       // Tenant boundary
+  nodeId: string,         // Specific node in org hierarchy
+  role: string,           // e.g. "design_lead"
+  access: "full" | "coordinator" | "team" | "readonly" | "event_only",
+  capabilities: string[], // permissions list
+  addedBy: string,
+  addedAt: Timestamp
+}
+```
+
+### events/{internalId}
+```typescript
+{
+  id: string,             // Internal UUID
+  orgId: string,          // Internal UUID
+  tenantId: string,       // Tenant boundary
+  nodeId: string,         // Associated node
+  name: string,
+  type: "event" | "project",
+  status: "active" | "closed",
+  date: Timestamp | null,
+  driveAccountType: "org" | "separate",
+  driveRootFolderId: string,
+  whatsappGatewayNumber: string | null,
+  createdBy: string,
+  createdAt: Timestamp
+}
+```
+
+### tasks/{internalId}
+```typescript
+{
+  id: string,
+  orgId: string,          // Internal UUID
+  tenantId: string,       // Tenant boundary
+  eventId: string,        // Event UUID
+  title: string,
+  assigneeId: string | null,
+  deadline: Timestamp | null,
+  status: "unassigned" | "assigned" | "in_progress" | "completed" | "blocked",
+  createdBy: string,
+  createdAt: Timestamp
 }
 ```
 
@@ -443,10 +462,14 @@ These features were explicitly scoped out. Do not suggest or implement them:
 ## 12. Organization Onboarding Flow
 
 ### New Organization (`/org/new`)
-1. Enter organization name → auto-generate slug (editable)
-2. Verify slug is available
-3. Create org in Firestore → set admin custom claim
-4. Redirect to setup (WhatsApp number assignment)
+1. The `/org/new` page is a chatbot interface (no form fields).
+2. User talks to Fello, who collects everything through conversation:
+   - Organization name.
+   - Logo URL (from URL scrape suggestion or manual input).
+   - Url Namespace selection/confirmation: If user's domain does not exist in the `institutions` collection, Fello suggests a namespace (e.g. `sliit` for `my.sliit.lk`), checks its global availability in Firestore, and lets the user confirm or customize it. If the domain is already registered, Fello uses the existing URL namespace.
+   - Org type detection.
+3. Once confirmed, Fello writes the institution, organization, membership, and user updates to Firestore and redirects.
+4. Redirect to setup (WhatsApp number assignment).
 
 ### Join Organization (`/org/join`)
 1. Enter invite code or org slug

@@ -1102,7 +1102,7 @@ export const sendWhatsAppMessageTool = new FunctionTool({
         phoneNumber: { type: 'string', description: 'The Fello WhatsApp number for this event (E.164 without +)' },
         jid: { type: 'string', description: 'The recipient JID (group or individual)' },
         message: { type: 'string', description: 'The message text to send' },
-        orgId: { type: 'string', description: 'The organization ID' },
+        orgId: { type: 'string', description: 'organizations/{internalId}/ ← Internal UUID; institutions/{domain}/ ← Tenant root' },
       },
       required: ['phoneNumber', 'jid', 'message', 'orgId'],
     },
@@ -1186,6 +1186,7 @@ export const createTaskTool = new FunctionTool({
   }) => {
     try {
       const ref = await adminDb
+        // Use internal organization UUID; tenant is stored in the document
         .collection('organizations').doc(params.orgId)
         .collection('events').doc(params.eventId)
         .collection('tasks')
@@ -1231,6 +1232,7 @@ export const listTasksTool = new FunctionTool({
   fn: async (params: { orgId: string; eventId: string; statusFilter?: string }) => {
     try {
       let query = adminDb
+        // Query tasks within an organization identified by its internal UUID
         .collection('organizations').doc(params.orgId)
         .collection('events').doc(params.eventId)
         .collection('tasks')
@@ -1268,6 +1270,7 @@ export const updateTaskStatusTool = new FunctionTool({
   fn: async (params: { orgId: string; eventId: string; taskId: string; status: string }) => {
     try {
       await adminDb
+        // Update a task within the internal organization UUID scope
         .collection('organizations').doc(params.orgId)
         .collection('events').doc(params.eventId)
         .collection('tasks').doc(params.taskId)

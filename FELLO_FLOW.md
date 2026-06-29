@@ -15,11 +15,11 @@ app.fello.lk/
   /setup                     → WhatsApp OTP verification (bare layout)
   /org/join                  → find and join or create an org (bare layout)
   /org/new                   → create a new org (bare layout)
-  /org/[orgId]               → org home — CHATBOT (full app layout)
-  /org/[orgId]/events        → all events and projects
-  /org/[orgId]/events/[id]   → specific event dashboard
-  /org/[orgId]/members       → member management
-  /org/[orgId]/settings      → org settings
+  /org/[tenantNamespace]/[orgSlug]     → org home — CHATBOT (full app layout)
+  /org/[tenantNamespace]/[orgSlug]/events        → all events and projects
+  /org/[tenantNamespace]/[orgSlug]/events/[id]   → specific event dashboard
+  /org/[tenantNamespace]/[orgSlug]/members       → member management
+  /org/[tenantNamespace]/[orgSlug]/settings      → org settings
 ```
 
 ---
@@ -40,7 +40,7 @@ Used by:
 Full sidebar with navigation, org switcher in sidebar header, user menu. Based on `sidebar-08` shadcn block, modified to match the pattern in https://github.com/kavinduUdhara/uni-log-kavindu/
 
 Used by:
-- `/org/[orgId]` and all routes underneath it
+- `/org/[tenantNamespace]/[orgSlug]` and all routes underneath it
 
 ---
 
@@ -61,18 +61,18 @@ app/
         page.tsx
       new/
         page.tsx
-  org/
-    [orgId]/
-      layout.tsx                 ← full app layout with sidebar
-      page.tsx                   ← org home — chatbot
-      events/
-        page.tsx
-        [eventId]/
-          page.tsx
-      members/
-        page.tsx
-      settings/
-        page.tsx
+      [tenantNamespace]/
+        [orgSlug]/
+          layout.tsx             ← full app layout with sidebar
+          page.tsx               ← org home — chatbot
+          events/
+            page.tsx
+            [eventId]/
+              page.tsx
+          members/
+            page.tsx
+          settings/
+            page.tsx
 ```
 
 Route groups with parentheses `(bare)` share the bare layout without affecting the URL. `/` stays `/` not `/bare`.
@@ -87,7 +87,8 @@ User hits app.fello.lk
       → redirect to /sign-in
 
   → signed in, has lastOpenedOrg in Firestore
-      → redirect to /org/[lastOpenedOrgId]
+      → resolve its namespace/slug URL path
+      → redirect to /[namespace]/[orgSlug]
 
   → signed in, no lastOpenedOrg
       → redirect to /
@@ -95,12 +96,12 @@ User hits app.fello.lk
   → signed in, lands on /
       → show org selector
 
-  → signed in, hits /org/[id] they don't have access to
+  → signed in, hits /[namespace]/[orgSlug] they don't have access to
       → redirect to /
 
-  → signed in, on /org/[orgId], no WhatsApp verified yet
+  → signed in, on /[namespace]/[orgSlug], no WhatsApp verified yet
       → show WhatsApp verification banner (skippable)
-      → if not skipped → /setup → return to /org/[orgId]
+      → if not skipped → /setup → return to /[namespace]/[orgSlug]
 ```
 
 `lastOpenedOrg` is stored on the user's Firestore document — persists across devices. User switches from phone to laptop and still lands in the right org.
@@ -198,7 +199,7 @@ After sign in, system checks the email domain.
 **URL**: `app.fello.lk/`
 **Layout**: Bare
 
-Shown only if user has no `lastOpenedOrg`. Otherwise redirected straight to `/org/[lastOpenedOrgId]`.
+Shown only if user has no `lastOpenedOrg`. Otherwise resolved and redirected straight to `/[namespace]/[orgSlug]`.
 
 ### Four possible states:
 
@@ -210,16 +211,16 @@ Shown only if user has no `lastOpenedOrg`. Otherwise redirected straight to `/or
 - Show search — find org by name
 - Fill request form
 - Admin accepts or denies
-- If accepted → `/org/[orgId]`
+- If accepted → `/[namespace]/[orgSlug]`
 
 **Already a member of one org:**
 - Don't force selection — show their one org
 - "Join another" button with plus icon → `/org/join`
-- Auto-redirect to `/org/[orgId]` after brief moment
+- Auto-redirect to `/[namespace]/[orgSlug]` after brief moment
 
 **Already a member of multiple orgs:**
 - Show all org cards
-- User taps one → remembered as `lastOpenedOrg` in Firestore → redirect to `/org/[orgId]`
+- User taps one → remembered as `lastOpenedOrg` in Firestore → resolved and redirected to `/[namespace]/[orgSlug]`
 - "Join another" plus button always visible
 
 **Claim ownership:**
@@ -232,7 +233,7 @@ Shown only if user has no `lastOpenedOrg`. Otherwise redirected straight to `/or
 
 ## Activity 3 — Setup Org
 
-Appears only for newly created organizations. Existing orgs skip straight to `/org/[orgId]`.
+Appears only for newly created organizations. Existing orgs skip straight to `/[namespace]/[orgSlug]`.
 
 ### Step 1 — Verify WhatsApp number
 
@@ -251,7 +252,7 @@ Every user must verify their personal WhatsApp number. Can be skipped but nudged
 
 ### Step 2 — Org verification (admin only)
 
-**URL**: `/org/[orgId]/settings/verify`
+**URL**: `/[namespace]/[orgSlug]/settings/verify`
 
 - "Get verified" button on dashboard
 - Collect: picture of student ID + public URL of executive committee post
@@ -289,7 +290,7 @@ Members receive invite, sign in with Google or Microsoft, verify WhatsApp OTP, s
 
 ## Activity 4 — Make New Event or Project
 
-**URL**: `/org/[orgId]/events/new`
+**URL**: `/[namespace]/[orgSlug]/events/new`
 **Layout**: Full app
 
 Anyone in excom or with given permission can create.
@@ -352,7 +353,7 @@ Everything reflected in dashboard automatically. Drive folders and WhatsApp grou
 
 ## Activity 5 — Org Home (Chatbot)
 
-**URL**: `/org/[orgId]`
+**URL**: `/[namespace]/[orgSlug]`
 **Layout**: Full app with sidebar
 
 The home page of every org is a chatbot. This is the primary interaction surface for the dashboard. Not a traditional dashboard with widgets and charts — a conversational AI that knows everything about the org.
@@ -386,7 +387,7 @@ The chatbot has full context of the org — structure, all active events, all ta
 
 ## Activity 6 — Run Event
 
-**URL**: `/org/[orgId]/events/[eventId]`
+**URL**: `/[namespace]/[orgSlug]/events/[eventId]`
 **Layout**: Full app
 
 ### Public event — volunteer and delegate onboarding:
@@ -422,7 +423,7 @@ The chatbot has full context of the org — structure, all active events, all ta
 
 ## Activity 7 — Track Progress
 
-**URL**: `/org/[orgId]/events/[eventId]/progress` or via chatbot on `/org/[orgId]`
+**URL**: `/[namespace]/[orgSlug]/events/[eventId]/progress` or via chatbot on `/[namespace]/[orgSlug]`
 
 ### Via chatbot (primary):
 Ask anything in natural language. Agent queries Firestore and Cloud SQL, returns real answers.

@@ -108,59 +108,52 @@ Do not hardcode any colors. Never use hex values or Tailwind color utilities lik
 
 ## Architecture Overview
 
-### Multi-tenant with tree-based hierarchy
+### Tenant and Org Identity (Multi-tenant)
 
-Every organization is a node. Every node has a parentId. This handles everything from a simple Mozilla club (single root node) to a full IEEE branch (root with 6 sub-branch children).
-
-```
-organizations/
-  sliit-ieee/
-    name: "SLIIT IEEE"
-    parentId: null
-    ancestors: []
-    domain: "sliit.lk"
-    verified: false
-    
-  sliit-ieee-ias/
-    name: "SLIIT IEEE IAS"
-    parentId: "sliit-ieee"
-    ancestors: ["sliit-ieee"]
-    domain: "sliit.lk"
-    
-  sliit-mozilla/
-    name: "SLIIT Mozilla Club"
-    parentId: null
-    ancestors: []
-    domain: "sliit.lk"
-```
-
-The `ancestors` array enables access inheritance — if you belong to `sliit-ieee`, you automatically have read access to any org that has `sliit-ieee` in its ancestors array. Access flows downward only.
+Every user belongs to a tenant determined by their email domain (e.g., `my.sliit.lk`).
+- **Tenant ID**: The full email domain.
+- **Namespace**: Chosen by each institution (e.g., `sliit`), globally unique, used only in URLs.
+- **Slug**: Org slug (e.g., `ieee`) unique within that tenant only.
+- **URL Path**: namespace/slug (e.g., `sliit/ieee`) display alias.
+- **Internal UUID**: Orgs have an internal UUID (`org_8f3k2a9x`) used in all documents, security rules, and membership checks. Slug and namespace are just display aliases.
 
 ### Firebase Auth with custom claims
 
-After sign in, Cloud Run writes org context into the user's JWT as custom claims:
+After sign in, custom claims are written into the user's JWT:
 
-```javascript
+```typescript
 {
+  tenantId: "my.sliit.lk",        // full domain
   orgs: {
-    'sliit-ieee': {
-      access: 'full',
-      nodeId: 'branch-root',
-      capabilities: ['gmail.read', 'gmail.send', 'drive.read', 'drive.write', 'whatsapp.send', 'whatsapp.manage', 'members.manage', 'tasks.manage', 'events.manage', 'analytics.view', 'finance.view', 'forms.create', 'calendar.manage']
+    "org_8f3k2a9x": {
+      access: "full",
+      nodeId: "node_2m5k9x3a",
+      capabilities: [
+        "drive.read", "drive.write",
+        "whatsapp.send", "whatsapp.manage",
+        "members.manage", "tasks.manage",
+        "events.manage", "analytics.view"
+      ]
     },
-    'sliit-ieee-ias': {
-      access: 'team',
-      nodeId: 'ias-design-team',
-      capabilities: ['drive.read', 'drive.write', 'whatsapp.send', 'tasks.manage']
+    "org_3k9x2a1b": {
+      access: "readonly",          // inherited from parent org
+      nodeId: "node_1a2b3c4d",
+      via: "org_8f3k2a9x",         // which direct membership gave this access
+      capabilities: []
     }
   },
   events: {
-    'pti-2026': { access: 'event_only', orgId: 'sliit-ieee-ias' }
-  }
+    "evt_9k2m3x1a": {
+      access: "event_only",
+      orgId: "org_8f3k2a9x"
+    }
+  },
+  whatsappVerified: true,
+  claimsVersion: 3                 // compared against structureVersion for lazy refresh
 }
 ```
 
-Claims are computed once at sign in by querying all memberships and computing descendant access. Zero document reads on subsequent requests — pure token evaluation.
+Claims are computed once at sign in. Zero document reads on subsequent requests — pure token evaluation.
 
 When roles change, update claims immediately and force token refresh on the client:
 ```javascript
@@ -169,42 +162,68 @@ await firebase.auth().currentUser.getIdToken(true);
 
 ### Firestore security rules
 
+Rules check the JWT token only — zero document reads for permission checks.
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     function canAccess(orgId) {
-      return orgId in request.auth.token.orgs
-        || get(/databases/$(database)/documents/organizations/$(orgId)).data.ancestors.hasAny(request.auth.token.orgs.keys());
+      return orgId in request.auth.token.orgs;
     }
-    
+
     function getAccess(orgId) {
       return request.auth.token.orgs[orgId].access;
     }
-    
+
     function hasCapability(orgId, capability) {
       return capability in request.auth.token.orgs[orgId].capabilities;
     }
-    
-    match /organizations/{orgId} {
-      allow read: if canAccess(orgId);
-      allow write: if canAccess(orgId) && getAccess(orgId) == 'full';
+
+    function canWrite(orgId) {
+      return canAccess(orgId)
+        && getAccess(orgId) != 'readonly'
+        && getAccess(orgId) != 'event_only';
     }
-    
-    match /events/{eventId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canAccess(resource.data.orgId) && getAccess(resource.data.orgId) != 'member';
+
+    function sameTenant(tenantId) {
+      return request.auth.token.tenantId == tenantId;
     }
-    
-    match /tasks/{taskId} {
-      allow read: if canAccess(resource.data.orgId);
-      allow write: if canAccess(resource.data.orgId);
-    }
-    
-    match /whatsapp_messages/{messageId} {
-      allow read: if false;
+
+    match /institutions/{domain} {
+      allow read: if request.auth.token.tenantId == domain;
       allow write: if false;
+    }
+
+    match /organizations/{orgId} {
+      allow read: if canAccess(orgId) && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(orgId) && getAccess(orgId) == 'full' && sameTenant(resource.data.tenantId);
+    }
+
+    match /org_nodes/{nodeId} {
+      allow read: if canAccess(resource.data.orgId) && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(resource.data.orgId) && getAccess(resource.data.orgId) == 'full' && sameTenant(resource.data.tenantId);
+    }
+
+    match /memberships/{membershipId} {
+      allow read: if canAccess(resource.data.orgId) && sameTenant(resource.data.tenantId);
+      allow write: if canAccess(resource.data.orgId) && getAccess(resource.data.orgId) == 'full' && sameTenant(resource.data.tenantId);
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow write: if request.auth.uid == userId;
+    }
+
+    match /events/{eventId} {
+      allow read: if canAccess(resource.data.orgId) && sameTenant(resource.data.tenantId);
+      allow write: if canWrite(resource.data.orgId) && sameTenant(resource.data.tenantId);
+    }
+
+    match /tasks/{taskId} {
+      allow read: if canAccess(resource.data.orgId) && sameTenant(resource.data.tenantId);
+      allow write: if canWrite(resource.data.orgId) && sameTenant(resource.data.tenantId);
     }
   }
 }
@@ -213,41 +232,44 @@ service cloud.firestore {
 ### Firestore collections
 
 ```
-users/
-  uid, name, email, photo, domain, whatsappNumber, whatsappVerified
+institutions/{domain}
+  domain, namespace, displayName, verified, createdAt, structureVersion
 
-organizations/
-  name, parentId, ancestors[], domain, logo, verified, verificationStatus, createdBy, createdAt
+organizations/{internalId}
+  id, tenantId, slug, fullPath, name, logo, parentId, ancestors[], verified, verificationStatus, createdBy, createdAt, structureVersion
 
-org_nodes/
-  orgId, parentId, name, type, depth, ancestors[]
+org_nodes/{internalId}
+  id, orgId, tenantId, parentId, ancestors[], name, type, depth, createdAt
 
-memberships/
-  {userId}_{orgId} → userId, orgId, nodeId, role, access, capabilities[]
+memberships/{userId}_{internalOrgId}
+  userId, orgId, tenantId, nodeId, role, access, capabilities[], addedBy, addedAt
 
-events/
-  orgId, nodeId, name, type (event/project), date, status, driveAccountType, driveRootFolderId, whatsappGatewayNumber, createdBy, createdAt
+users/{uid}
+  uid, email, tenantId, name, photo, whatsappNumber, whatsappVerified, lastOpenedOrg, createdAt, claimsVersion
 
-tasks/
-  orgId, eventId, title, description, assigneeId, deadline, status, createdBy, createdAt
+events/{internalId}
+  id, orgId, tenantId, nodeId, name, type (event/project), status (active/closed), date, driveAccountType, driveRootFolderId, whatsappGatewayNumber, createdBy, createdAt
 
-outreach/
-  orgId, eventId, contactName, company, email, phone, status, lastContactAt, notes, nextFollowUp
+tasks/{internalId}
+  id, orgId, tenantId, eventId, title, assigneeId, deadline, status, createdBy, createdAt
 
-automations/
-  orgId, eventId, name, trigger, config, status (pending/approved/active), createdBy, approvedBy
+outreach/{internalId}
+  id, orgId, tenantId, eventId, contactName, company, email, phone, status, lastContactAt, nextFollowUp, notes
 
-event_summaries/
-  orgId, eventId, eventName, dateRange, generatedAt, narrativeSummary, tasksCompleted, tasksMissed, topContributors, groupSummaries, keyDecisions, blockers
+automations/{internalId}
+  id, orgId, tenantId, eventId, name, trigger, config, status, createdBy, approvedBy, createdAt
 
-whatsapp_groups/
-  orgId, eventId, jid, name, type, members[], createdAt
+event_summaries/{eventId}
+  eventId, orgId, tenantId, eventName, dateRange, generatedAt, narrativeSummary, tasksCompleted, tasksMissed, totalMembers, topContributors, groupSummaries, keyDecisions, blockers, lessonsLearned
 
-otp_verifications/
-  {whatsappNumber} → otp, expiresAt, verified, userId
+whatsapp_groups/{internalId}
+  id, orgId, tenantId, eventId, jid, name, type, members[], createdAt
 
-whatsapp_verifications/
-  {userId} → code, expiresAt, verified, customToken
+otp_verifications/{whatsappNumber}
+  otp, expiresAt, verified, userId, attempts
+
+waitlist/{email}
+  email, domain, orgName, requestedAt
 ```
 
 ### Cloud SQL (PostgreSQL) schema

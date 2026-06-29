@@ -80,9 +80,9 @@ The immediate target is student organizations and university clubs. The underlyi
 
 ### 5.1 Firebase Auth with JWT Custom Claims
 
-**Decision:** Bake `{ orgId, role, tenantId }` into JWT custom claims at sign-in time.
+**Decision:** Bake `{ tenantId, orgs: { [orgId]: { access, nodeId, capabilities } } }` into JWT custom claims at sign-in time.
 
-**Why:** Every permission check in the app needs to know which org the user belongs to and what role they have. Fetching this from Firestore on every request adds latency and costs reads. JWT claims are free to verify — the Firebase SDK does it locally. Zero-database-read permission checks was the explicit goal.
+**Why:** Every permission check in the app needs to know which org the user belongs to and what role/capabilities they have. Fetching this from Firestore on every request adds latency and costs reads. JWT claims are free to verify — the Firebase SDK does it locally. Zero-database-read permission checks was the explicit goal.
 
 **Implication:** When a user's role changes, their token must be refreshed (force token refresh on next request). Handle this in `use-auth.ts`.
 
