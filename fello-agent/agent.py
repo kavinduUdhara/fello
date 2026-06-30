@@ -59,12 +59,17 @@ from skills import (
     event_health,
     member_engagement,
     outreach_funnel,
+    create_google_form,
 )
 
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
 _API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.3-70b-instruct")
-_FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.1-8b-instruct")
+# nemotron-super-49b stays consistently warm on NIM (~1s/call, vs 70b's 30-60s
+# cold starts) and is strong at tool-calling. It's a reasoning model, so we
+# disable its chain-of-thought with the documented "detailed thinking off"
+# directive (see create_agent) to keep replies clean. 70b is the quality fallback.
+_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1.5")
+_FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct")
 
 
 def _make_model(model_id: str) -> LiteLlm:
@@ -129,22 +134,29 @@ You always operate inside ONE verified organization. You never ask the user for,
 and never accept, an org or tenant id from the conversation — that scope is fixed
 by the system. Just act within it.
 
-## Your specialist sub-agents (call them as tools)
-- `extract_structured_items` — when the user pastes or forwards messy WhatsApp
-  chat and wants you to pull out the tasks / action items / group needs from it.
-- `generate_event_summary` — when the user asks for a wrap-up, recap, or report
-  of an event.
-- `community_insights` — when the user asks how things are going, what's at risk,
-  who's overloaded, whether to follow up, or any "what should we do next"
-  question. This is your decision-intelligence brain — prefer it over guessing.
+## Decision-intelligence tools
+When the user asks how things are going, what's at risk, who's overloaded, or
+"what should we do next", use the analytics tools and lead with the single most
+important recommendation:
+- `event_health` — task completion %, overdue and blocked counts, recommendations.
+- `member_engagement` — who is overloaded vs idle, to rebalance work.
+- `outreach_funnel` — sponsor/speaker outreach conversion.
 
-Use your own direct tools for concrete actions (create a task, assign it, create
-a group, broadcast a message, find a document, log outreach). Delegate analysis,
-extraction, and summarization to the sub-agents above.
+Use your action tools for concrete work (create/assign tasks, create a group,
+broadcast, find a document, log outreach).
+
+You CAN create a Google Form in the org's connected Google account with
+`create_google_form` (title, description, list of question prompts) — use it when
+the user asks for a form, registration sheet, sign-up, or survey. Return the
+share link. You do not have Gmail or other Google tools beyond this.
 
 {_CARD_CONTRACT}
 
 ## Rules
+- For greetings, thanks, or small talk ("hi", "hello", "thanks"), reply briefly
+  and DO NOT call any tool. Only use tools when the user asks for specific data
+  or an action.
+- Use at most one or two tools per turn — don't chain many calls.
 - Confirm what was DONE, not just what you will do.
 - Be concise — one or two sentences, then a card if relevant, then suggestions.
 - Always end with [SUGGESTIONS] — never leave the user without a next step.
@@ -153,71 +165,27 @@ extraction, and summarization to the sub-agents above.
 - If WhatsApp isn't connected, say so and offer the dashboard equivalent.
 """
 
-_EXTRACTION_PROMPT = """You are Fello's Extraction Agent. You read messy, real WhatsApp conversation
-text and turn it into structured coordination items. Identify concrete tasks
-(who, what, by when), any new team/group that needs creating, and members who
-should be added. Create the tasks you are confident about using your tools, and
-return a short plain-language list of what you created plus anything ambiguous
-you did NOT act on. Do not invent assignees or deadlines that weren't stated."""
-
-_SUMMARY_PROMPT = """You are Fello's Summary Agent. Given an event, read its tasks, documents, and
-outreach via your tools and produce a tight wrap-up: what got done, what's
-outstanding, and outreach outcomes. Be factual and concise — a coordinator
-should be able to paste your summary into a report."""
-
-_INSIGHTS_PROMPT = """You are Fello's Insights Agent — the decision-intelligence brain. Use your
-analytics tools (event_health, member_engagement, outreach_funnel) to find
-patterns, anomalies, and risks in THIS org's own data, then give the coordinator
-a clear, prioritized recommendation of what to do next. Always lead with the
-single most important action. Quantify where you can (percent complete, overdue
-counts, conversion rate). Never speculate beyond what the tools return."""
-
-
-def _agent(name, description, instruction, tools, model_id):
-    return Agent(
-        name=name,
-        model=_make_model(model_id),
-        description=description,
-        instruction=instruction,
-        tools=tools,
-        before_tool_callback=before_tool,
-        after_tool_callback=after_tool,
-    )
-
-
 def create_agent(model_id: str | None = None) -> Agent:
-    """Build the full orchestrator + sub-agent tree."""
+    """Build the Fello coordinator.
+
+    Intentionally a single flat agent rather than orchestrator + sub-agents-as-
+    tools. On NVIDIA NIM each model call can cold-start (~30s), and nesting
+    sub-agents multiplied those calls into 2-3 minute turns. A flat agent keeps
+    one tool-calling loop — far more responsive — while retaining the full skill
+    set, including the decision-intelligence analytics tools.
+    """
     primary = model_id or _PRIMARY
-
-    extraction_agent = _agent(
-        "fello_extraction",
-        "Extracts structured tasks and coordination items from raw WhatsApp chat.",
-        _EXTRACTION_PROMPT,
-        [create_task, create_whatsapp_group, add_member_to_group, lookup_member],
-        primary,
-    )
-    summary_agent = _agent(
-        "fello_summary",
-        "Generates concise event wrap-up summaries.",
-        _SUMMARY_PROMPT,
-        [list_tasks, list_documents, list_outreach, get_event_details],
-        primary,
-    )
-    insights_agent = _agent(
-        "fello_insights",
-        "Decision-intelligence: patterns, anomalies, and next-best-action recommendations.",
-        _INSIGHTS_PROMPT,
-        [event_health, member_engagement, outreach_funnel],
-        primary,
-    )
-
-    orchestrator = Agent(
+    # nemotron reasoning models emit chain-of-thought as output unless told not to.
+    instruction = ORCHESTRATOR_PROMPT
+    if "nemotron" in primary.lower():
+        instruction = "detailed thinking off\n\n" + ORCHESTRATOR_PROMPT
+    return Agent(
         name="fello_coordinator",
         model=_make_model(primary),
-        description="Fello coordination + decision-intelligence orchestrator.",
-        instruction=ORCHESTRATOR_PROMPT,
+        description="Fello coordination + decision-intelligence agent.",
+        instruction=instruction,
         tools=[
-            # Direct, high-frequency coordination actions (kept lean):
+            # Coordination actions
             send_whatsapp_message,
             create_whatsapp_group,
             broadcast_message,
@@ -228,18 +196,20 @@ def create_agent(model_id: str | None = None) -> Agent:
             list_members,
             lookup_member,
             list_upcoming_events,
+            get_event_details,
             find_document,
             log_outreach_attempt,
             draft_outreach_message,
-            # Specialist sub-agents, exposed as tools:
-            AgentTool(agent=extraction_agent),
-            AgentTool(agent=summary_agent),
-            AgentTool(agent=insights_agent),
+            # Decision-intelligence analytics (formerly the Insights sub-agent)
+            event_health,
+            member_engagement,
+            outreach_funnel,
+            # Google Workspace (uses the org's connected Google account)
+            create_google_form,
         ],
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,
     )
-    return orchestrator
 
 
 # Agent Engine and local `adk run` pick up root_agent.

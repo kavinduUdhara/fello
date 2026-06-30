@@ -35,12 +35,15 @@ app = AdkApp(agent=root_agent, enable_tracing=False)
 # Agent Engine rejects env vars with empty values, so only pass ones that are set.
 _env_vars = {
     "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
-    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.3-70b-instruct"),
-    "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.1-8b-instruct"),
+    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.1-8b-instruct"),
+    "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct"),
     # GOOGLE_CLOUD_PROJECT is reserved on Agent Engine — the runtime provides it.
     "BAILEYS_API_URL":         os.environ.get("BAILEYS_API_URL", ""),
     "BAILEYS_API_SECRET":      os.environ.get("BAILEYS_API_SECRET", ""),
     "DATABASE_URL":            os.environ.get("DATABASE_URL", ""),
+    # Needed to refresh an org's Google token for Forms/Docs creation.
+    "GOOGLE_OAUTH_CLIENT_ID":     os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
+    "GOOGLE_OAUTH_CLIENT_SECRET": os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
 }
 _env_vars = {k: v for k, v in _env_vars.items() if v}
 
