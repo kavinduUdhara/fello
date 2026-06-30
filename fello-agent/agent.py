@@ -60,6 +60,7 @@ from skills import (
     member_engagement,
     outreach_funnel,
     create_google_form,
+    update_google_form,
 )
 
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
@@ -133,7 +134,21 @@ fields and submit. Example for a Google Form:
 [/BLOCK]
 Put a short sentence before the card and [SUGGESTIONS] after it. When the user
 replies with the submitted details, THEN call create_google_form (split the
-questions by line) and reply with the share link."""
+questions by line).
+
+After create_google_form OR update_google_form succeeds, do NOT paste the raw
+links as text. Emit a [BLOCK:form_result] card so the share + edit links render
+as buttons:
+[BLOCK:form_result]
+{"title":"PTI volunteer sign up","responderUri":"<responderUri from the tool>","editUri":"<editUri from the tool>"}
+[/BLOCK]
+Use the EXACT responderUri and editUri the tool returned — never invent URLs.
+
+EDITING an existing form: when the user asks to rename, change the description of,
+or add questions to a form you already created, call update_google_form with that
+form's form_id (from the earlier result / the editUri, which ends in
+/forms/d/<form_id>/edit) — do NOT create a brand-new form, and do NOT delete the
+existing one. Then emit the [BLOCK:form_result] card again."""
 
 
 ORCHESTRATOR_PROMPT = f"""You are Fello, an AI coordination assistant and decision-intelligence partner
@@ -220,6 +235,7 @@ def create_agent(model_id: str | None = None) -> Agent:
             outreach_funnel,
             # Google Workspace (uses the org's connected Google account)
             create_google_form,
+            update_google_form,
         ],
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,
