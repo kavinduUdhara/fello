@@ -63,8 +63,8 @@ from skills import (
 
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
 _API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "thudm/glm-4-9b-chat")
-_FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "minimax/minimax-text-01")
+_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.3-70b-instruct")
+_FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.1-8b-instruct")
 
 
 def _make_model(model_id: str) -> LiteLlm:

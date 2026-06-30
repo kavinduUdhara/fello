@@ -32,9 +32,24 @@ vertexai.init(project=PROJECT, location=LOCATION, staging_bucket=BUCKET)
 
 app = AdkApp(agent=root_agent, enable_tracing=False)
 
+# Agent Engine rejects env vars with empty values, so only pass ones that are set.
+_env_vars = {
+    "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
+    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.3-70b-instruct"),
+    "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.1-8b-instruct"),
+    # GOOGLE_CLOUD_PROJECT is reserved on Agent Engine — the runtime provides it.
+    "BAILEYS_API_URL":         os.environ.get("BAILEYS_API_URL", ""),
+    "BAILEYS_API_SECRET":      os.environ.get("BAILEYS_API_SECRET", ""),
+    "DATABASE_URL":            os.environ.get("DATABASE_URL", ""),
+}
+_env_vars = {k: v for k, v in _env_vars.items() if v}
+
 deployed = agent_engines.create(
     app,
     requirements=[
+        # Provides the `vertexai` module the Agent Engine runtime needs to load
+        # the pickled agent. Without it the container fails to start.
+        "google-cloud-aiplatform[agent_engines]>=1.93.0",
         "google-adk>=0.3.0",
         "firebase-admin>=6.5.0",
         "litellm>=1.50.0",
@@ -42,15 +57,17 @@ deployed = agent_engines.create(
         "python-dotenv>=1.0.0",
         "psycopg2-binary>=2.9.9",
     ],
-    env_vars={
-        "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
-        "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "thudm/glm-4-9b-chat"),
-        "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "minimax/minimax-text-01"),
-        "GOOGLE_CLOUD_PROJECT":    PROJECT,
-        "BAILEYS_API_URL":         os.environ.get("BAILEYS_API_URL", ""),
-        "BAILEYS_API_SECRET":      os.environ.get("BAILEYS_API_SECRET", ""),
-        "DATABASE_URL":            os.environ.get("DATABASE_URL", ""),
-    },
+    # Local source the pickled agent references by module — must be shipped to
+    # the container or it fails to start with ModuleNotFoundError (skills, etc.).
+    extra_packages=[
+        "agent.py",
+        "context.py",
+        "authz.py",
+        "observability.py",
+        "demo_fallback.py",
+        "skills",
+    ],
+    env_vars=_env_vars,
     display_name="fello-coordinator",
 )
 
