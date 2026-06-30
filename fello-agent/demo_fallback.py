@@ -17,9 +17,9 @@ _SCRIPT: list[tuple[tuple[str, ...], str]] = [
         ("pti", "parents", "teacher", "create event", "new event"),
         "Done — I've set up **PTI 2026** as an active event and spun up the core "
         "coordination structure for it.\n\n"
-        "[CARD:event]\n"
-        '{"name": "PTI 2026", "date": "2026-07-12", "status": "active", "type": "event", "coordinators": ["Kavindu"]}\n'
-        "[/CARD]\n"
+        "[BLOCK:event]\n"
+        '{"name":"PTI 2026","date":"2026-07-12","status":"active","eventType":"event","tasksDone":0,"tasksTotal":6,"coordinators":["Kavindu"]}\n'
+        "[/BLOCK]\n"
         "[SUGGESTIONS]\n"
         "Create the team WhatsApp groups | Assign coordinators | Draft the parent invite | Add tasks\n"
         "[/SUGGESTIONS]",
@@ -28,9 +28,9 @@ _SCRIPT: list[tuple[tuple[str, ...], str]] = [
         ("group", "whatsapp", "create the team"),
         "Created 3 WhatsApp groups and added the right members from your directory — "
         "**PTI Design**, **PTI Logistics**, and **PTI Outreach**.\n\n"
-        "[CARD:task]\n"
-        '{"title": "Confirm venue & schedule", "assignee": "Logistics Lead", "status": "assigned", "dueDate": "2026-07-02", "eventName": "PTI 2026"}\n'
-        "[/CARD]\n"
+        "[BLOCK:task]\n"
+        '{"title":"Confirm venue & schedule","assignee":"Logistics Lead","status":"assigned","dueDate":"2026-07-02","eventName":"PTI 2026","priority":"high"}\n'
+        "[/BLOCK]\n"
         "[SUGGESTIONS]\n"
         "Broadcast the kickoff message | Assign design tasks | Draft sponsor outreach | Show event health\n"
         "[/SUGGESTIONS]",
@@ -38,9 +38,9 @@ _SCRIPT: list[tuple[tuple[str, ...], str]] = [
     (
         ("task", "assign"),
         "Assigned the design and logistics tasks and notified each owner in their group.\n\n"
-        "[CARD:task]\n"
-        '{"title": "Design the PTI poster", "assignee": "Design Lead", "status": "in_progress", "dueDate": "2026-07-05", "eventName": "PTI 2026"}\n'
-        "[/CARD]\n"
+        "[BLOCK:task]\n"
+        '{"title":"Design the PTI poster","assignee":"Design Lead","status":"in_progress","dueDate":"2026-07-05","eventName":"PTI 2026","priority":"high"}\n'
+        "[/BLOCK]\n"
         "[SUGGESTIONS]\n"
         "Show event health | Draft sponsor outreach | Broadcast a reminder | Wrap-up summary\n"
         "[/SUGGESTIONS]",

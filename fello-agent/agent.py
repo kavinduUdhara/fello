@@ -72,30 +72,51 @@ def _make_model(model_id: str) -> LiteLlm:
 
 
 # --- Shared response-format contract (used by orchestrator + fallback) -------
-_CARD_CONTRACT = """## Response Format
+# These [BLOCK:*] markers match the dashboard's dynamic-UI renderer (see
+# fello-frontend app/api/chat/route.ts and components/dynamic-ui.tsx), so agent
+# output renders identically whether served by Agent Engine or the NIM fallback.
+_CARD_CONTRACT = """## Response Format — Dynamic UI Blocks
 
-After acting, include UI cards using these exact markers — the frontend renders
-them as rich components. Do not skip them.
+The dashboard renders rich components from [BLOCK:type] markers. Use them
+liberally instead of walls of text. JSON must be on a single line inside a block.
 
-### Task card (after creating/updating a task):
-[CARD:task]
-{"title": "...", "assignee": "Full Name or null", "status": "unassigned|assigned|in_progress|completed|blocked", "dueDate": "YYYY-MM-DD or null", "eventName": "..."}
-[/CARD]
+### Stats panel (2-4 key figures):
+[BLOCK:stats]
+[{"label":"Open Tasks","value":9,"sublabel":"3 overdue","trend":"down","urgent":true},{"label":"Members","value":14}]
+[/BLOCK]
 
-### Member table (after listing members):
-[CARD:members]
-[{"name": "...", "role": "...", "phone": "...", "status": "active|inactive|pending"}]
-[/CARD]
+### Single task (after creating/updating one task):
+[BLOCK:task]
+{"title":"Book venue","assignee":"Alice","status":"assigned","dueDate":"2026-07-04","eventName":"PTI 2026","priority":"high"}
+[/BLOCK]
+status: unassigned|assigned|in_progress|completed|blocked   priority: high|medium|low
 
-### Event card (after creating/showing an event):
-[CARD:event]
-{"name": "...", "date": "YYYY-MM-DD or null", "status": "active|closed|planning", "type": "event|project", "coordinators": ["Name1"]}
-[/CARD]
+### Task list (multiple tasks):
+[BLOCK:task_list]
+{"title":"Open Tasks","tasks":[{"title":"Print banners","status":"unassigned","priority":"medium"}]}
+[/BLOCK]
 
-### Suggestion chips (include after EVERY response — 3 to 4 options):
+### Member grid (after listing members):
+[BLOCK:member_grid]
+{"title":"Core Team","members":[{"name":"Alice","role":"Design Lead","status":"active"}]}
+[/BLOCK]
+
+### Event card / list:
+[BLOCK:event]
+{"name":"PTI 2026","date":"2026-07-12","status":"active","eventType":"event","tasksDone":4,"tasksTotal":10,"coordinators":["Alice"]}
+[/BLOCK]
+
+### Alert (warnings/successes) and charts (bar_chart, donut_chart, line_chart, outreach_pipeline, progress) are also available — use them for insights.
+[BLOCK:alert]
+{"level":"warning","title":"3 tasks overdue","message":"Follow up today.","action":"Show overdue tasks"}
+[/BLOCK]
+
+### Suggestion chips — include after EVERY response (3-4 options):
 [SUGGESTIONS]
 Option 1 | Option 2 | Option 3 | Option 4
-[/SUGGESTIONS]"""
+[/SUGGESTIONS]
+
+Never output raw JSON outside a [BLOCK:...] marker."""
 
 
 ORCHESTRATOR_PROMPT = f"""You are Fello, an AI coordination assistant and decision-intelligence partner
