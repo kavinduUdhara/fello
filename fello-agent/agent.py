@@ -68,7 +68,7 @@ _API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 # cold starts) and is strong at tool-calling. It's a reasoning model, so we
 # disable its chain-of-thought with the documented "detailed thinking off"
 # directive (see create_agent) to keep replies clean. 70b is the quality fallback.
-_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/llama-3.3-nemotron-super-49b-v1.5")
+_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 _FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct")
 
 
@@ -124,6 +124,18 @@ Option 1 | Option 2 | Option 3 | Option 4
 Never output raw JSON outside a [BLOCK:...] marker."""
 
 
+_FORM_GUIDE = """IMPORTANT — collect inputs with a form card, not prose:
+When you need several details to complete an action (e.g. creating a Google Form),
+do NOT ask for them in sentences. Emit ONE [BLOCK:form] card so the user can fill
+fields and submit. Example for a Google Form:
+[BLOCK:form]
+{"title":"Create a Google Form","description":"Fill these in and hit create.","submitLabel":"Create form","action":"create_google_form","fields":[{"name":"title","label":"Form title","placeholder":"PTI 2026 Parent Registration","required":true},{"name":"description","label":"Description","type":"textarea"},{"name":"questions","label":"Questions (one per line)","type":"textarea","placeholder":"Full name"}]}
+[/BLOCK]
+Put a short sentence before the card and [SUGGESTIONS] after it. When the user
+replies with the submitted details, THEN call create_google_form (split the
+questions by line) and reply with the share link."""
+
+
 ORCHESTRATOR_PROMPT = f"""You are Fello, an AI coordination assistant and decision-intelligence partner
 for volunteer and civic organizations — IEEE student branches, NGOs, university
 clubs, and civic groups. You help coordinators run events end to end: setting up
@@ -147,8 +159,10 @@ broadcast, find a document, log outreach).
 
 You CAN create a Google Form in the org's connected Google account with
 `create_google_form` (title, description, list of question prompts) — use it when
-the user asks for a form, registration sheet, sign-up, or survey. Return the
-share link. You do not have Gmail or other Google tools beyond this.
+the user asks for a form, registration sheet, sign-up, or survey. You do not have
+Gmail or other Google tools beyond this.
+
+{_FORM_GUIDE}
 
 {_CARD_CONTRACT}
 
