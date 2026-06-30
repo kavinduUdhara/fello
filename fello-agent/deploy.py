@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import vertexai
-from vertexai.preview import agent_engines
-from vertexai.preview.reasoning_engines import AdkApp
+from vertexai import agent_engines
+from vertexai.agent_engines import AdkApp
 
 # Import the agent AFTER env is loaded
 from agent import root_agent
@@ -42,7 +42,7 @@ deployed = agent_engines.create(
         "python-dotenv>=1.0.0",
         "psycopg2-binary>=2.9.9",
     ],
-    environment_variables={
+    env_vars={
         "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
         "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "thudm/glm-4-9b-chat"),
         "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "minimax/minimax-text-01"),
