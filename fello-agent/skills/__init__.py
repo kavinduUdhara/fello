@@ -23,6 +23,7 @@ from .members import (
     get_member_whatsapp_jid,
 )
 from .events import (
+    create_project,
     get_event_details,
     update_event_status,
     list_upcoming_events,
@@ -67,6 +68,7 @@ __all__ = [
     "list_members",
     "get_member_whatsapp_jid",
     # events
+    "create_project",
     "get_event_details",
     "update_event_status",
     "list_upcoming_events",

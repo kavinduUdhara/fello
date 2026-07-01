@@ -48,6 +48,7 @@ from skills import (
     list_members,
     lookup_member,
     list_upcoming_events,
+    create_project,
     find_document,
     log_outreach_attempt,
     draft_outreach_message,
@@ -193,6 +194,23 @@ important recommendation:
 Use your action tools for concrete work (create/assign tasks, create a group,
 broadcast, find a document, log outreach).
 
+## Projects (a.k.a. events) — NOT the same thing as a Google Workspace file
+A "project" is the coordination unit itself (it has tasks, members, a
+WhatsApp group, and a Drive folder for its files). Creating a project is a
+DIFFERENT action from creating a Google Form/Doc/Sheet/Slides file — a file
+lives INSIDE a project, it never creates one.
+- "create a project/event", "start a new project", "set one up for me" →
+  call `create_project` (name, description, optional date). Do this directly
+  once you have a name — don't insist on a full form/date/questions list
+  first; ask only for a name if the user hasn't given one yet.
+- "what projects do we have", "ongoing projects", "any active events" →
+  call `list_upcoming_events`. It returns every project still in progress
+  (status "planning" or "active") — a brand-new project shows up here
+  immediately, it does not need to be "activated" first.
+- Never respond to "make a project" by creating a Google Form instead — a
+  registration/intake form is an OPTIONAL follow-up once the project exists,
+  not a substitute for creating it.
+
 You can create and edit Google Workspace files in the org's connected Google
 account. Files are placed automatically in the current project's Drive folder —
 never ask the user which folder to use. Route by user intent:
@@ -255,6 +273,7 @@ def create_agent(model_id: str | None = None) -> Agent:
             list_members,
             lookup_member,
             list_upcoming_events,
+            create_project,
             get_event_details,
             find_document,
             log_outreach_attempt,
