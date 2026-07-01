@@ -1,6 +1,8 @@
 """Document stub skills (Firestore). Real file retrieval lives in retrieval.py.
 
 Org scope comes from the verified context; the model never supplies org_id.
+Documents are scoped to a project (no separate "event" collection — see
+skills/events.py) and live in `project_documents`, keyed by `projectId`.
 """
 
 from __future__ import annotations
@@ -33,15 +35,15 @@ def create_document_stub(
     actor = identity(tool_context)
     evt = resolve_event_id(tool_context, event_id)
     if not evt:
-        return {"success": False, "error": "No event specified."}
+        return {"success": False, "error": "No project specified."}
     try:
         doc_id = f"doc_{uuid.uuid4().hex[:8]}"
-        db().collection("event_documents").document(doc_id).set(
+        db().collection("project_documents").document(doc_id).set(
             {
                 "id": doc_id,
                 "orgId": actor.org_id,
                 "tenantId": actor.tenant_id,
-                "eventId": evt,
+                "projectId": evt,
                 "title": title,
                 "type": doc_type,
                 "url": None,
@@ -62,7 +64,7 @@ def link_document(doc_id: str, url: str, tool_context: ToolContext) -> dict:
 
     actor = identity(tool_context)
     try:
-        ref = db().collection("event_documents").document(doc_id)
+        ref = db().collection("project_documents").document(doc_id)
         snap = ref.get()
         if not snap.exists or snap.to_dict().get("orgId") != actor.org_id:
             return {"success": False, "error": "Document not found or access denied."}
@@ -73,17 +75,17 @@ def link_document(doc_id: str, url: str, tool_context: ToolContext) -> dict:
 
 
 def list_documents(tool_context: ToolContext, event_id: str | None = None) -> dict:
-    """List document stubs for an event. Read-only."""
+    """List document stubs for a project. Read-only."""
     actor = identity(tool_context)
     evt = resolve_event_id(tool_context, event_id)
     if not evt:
-        return {"documents": [], "error": "No event specified."}
+        return {"documents": [], "error": "No project specified."}
     try:
         docs = (
             db()
-            .collection("event_documents")
+            .collection("project_documents")
             .where("orgId", "==", actor.org_id)
-            .where("eventId", "==", evt)
+            .where("projectId", "==", evt)
             .stream()
         )
         documents = [d.to_dict() for d in docs]

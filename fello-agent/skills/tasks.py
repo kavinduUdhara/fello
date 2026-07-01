@@ -3,6 +3,10 @@
 Tenant scope (tenant_id, org_id) is sourced from the verified ToolContext, never
 from model-supplied arguments (FELLO_ADK_CAPABILITIES_AND_SECURITY.md). The model
 only supplies the *content* of a task (title, who, when) — never *which org*.
+
+Tasks are scoped to a project (there is no separate "event" concept/collection —
+see skills/events.py) via the `projectId` field, resolved through the existing
+`event_id` session-state key / `resolve_event_id` helper.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ def create_task(
     actor = identity(tool_context)
     evt = resolve_event_id(tool_context, event_id)
     if not evt:
-        return {"success": False, "error": "No event specified. Which event is this task for?"}
+        return {"success": False, "error": "No project specified. Which project is this task for?"}
 
     try:
         task_id = f"task_{uuid.uuid4().hex[:8]}"
@@ -57,7 +61,7 @@ def create_task(
                 "id": task_id,
                 "orgId": actor.org_id,
                 "tenantId": actor.tenant_id,
-                "eventId": evt,
+                "projectId": evt,
                 "title": title,
                 "description": description,
                 "assignedTo": assignee_uids or [],
@@ -120,17 +124,17 @@ def list_tasks(
     event_id: str | None = None,
     status_filter: str | None = None,
 ) -> dict:
-    """List tasks for an event, optionally filtered by status. Read-only."""
+    """List tasks for a project, optionally filtered by status. Read-only."""
     actor = identity(tool_context)
     evt = resolve_event_id(tool_context, event_id)
     if not evt:
-        return {"tasks": [], "error": "No event specified."}
+        return {"tasks": [], "error": "No project specified."}
     try:
         q = (
             db()
             .collection("tasks")
             .where("orgId", "==", actor.org_id)
-            .where("eventId", "==", evt)
+            .where("projectId", "==", evt)
         )
         if status_filter:
             q = q.where("status", "==", status_filter)

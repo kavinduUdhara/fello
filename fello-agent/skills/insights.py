@@ -56,7 +56,7 @@ def event_health(tool_context: ToolContext, event_id: str | None = None) -> dict
             for d in db()
             .collection("tasks")
             .where("orgId", "==", actor.org_id)
-            .where("eventId", "==", evt)
+            .where("projectId", "==", evt)
             .stream()
         ]
     except Exception as e:
@@ -114,7 +114,7 @@ def member_engagement(tool_context: ToolContext, event_id: str | None = None) ->
     try:
         q = db().collection("tasks").where("orgId", "==", actor.org_id)
         if evt:
-            q = q.where("eventId", "==", evt)
+            q = q.where("projectId", "==", evt)
         tasks = [d.to_dict() for d in q.stream()]
         members = [
             d.to_dict()
@@ -164,7 +164,7 @@ def outreach_funnel(tool_context: ToolContext, event_id: str | None = None) -> d
             for d in db()
             .collection("outreach")
             .where("orgId", "==", actor.org_id)
-            .where("eventId", "==", evt)
+            .where("projectId", "==", evt)
             .stream()
         ]
     except Exception as e:

@@ -102,7 +102,7 @@ def log_outreach_attempt(
                 "id": outreach_id,
                 "orgId": actor.org_id,
                 "tenantId": actor.tenant_id,
-                "eventId": evt,
+                "projectId": evt,
                 "recipientName": recipient_name,
                 "recipientContact": recipient_contact,
                 "channel": channel,
@@ -133,7 +133,7 @@ def list_outreach(
             db()
             .collection("outreach")
             .where("orgId", "==", actor.org_id)
-            .where("eventId", "==", evt)
+            .where("projectId", "==", evt)
         )
         if status_filter:
             q = q.where("status", "==", status_filter)
