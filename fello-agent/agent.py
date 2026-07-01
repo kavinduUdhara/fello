@@ -59,8 +59,15 @@ from skills import (
     event_health,
     member_engagement,
     outreach_funnel,
+    # google workspace
     create_google_form,
     update_google_form,
+    create_google_doc,
+    update_google_doc,
+    create_google_sheet,
+    update_google_sheet,
+    create_google_slides,
+    update_google_slides,
 )
 
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
@@ -133,22 +140,36 @@ fields and submit. Example for a Google Form:
 {"title":"Create a Google Form","description":"Fill these in and hit create.","submitLabel":"Create form","action":"create_google_form","fields":[{"name":"title","label":"Form title","placeholder":"PTI 2026 Parent Registration","required":true},{"name":"description","label":"Description","type":"textarea"},{"name":"questions","label":"Questions (one per line)","type":"textarea","placeholder":"Full name"}]}
 [/BLOCK]
 Put a short sentence before the card and [SUGGESTIONS] after it. When the user
-replies with the submitted details, THEN call create_google_form (split the
-questions by line).
+replies with the submitted details, THEN call the appropriate create_* tool.
 
-After create_google_form OR update_google_form succeeds, do NOT paste the raw
-links as text. Emit a [BLOCK:form_result] card so the share + edit links render
-as buttons:
+After any create_* OR update_* Google Workspace tool succeeds, do NOT paste raw
+links as text. Emit a [BLOCK:form_result] card so the link renders as a button.
+
+Forms (create_google_form / update_google_form):
 [BLOCK:form_result]
-{"title":"PTI volunteer sign up","responderUri":"<responderUri from the tool>","editUri":"<editUri from the tool>"}
+{"title":"PTI volunteer sign up","kind":"form","responderUri":"<responderUri from tool>","editUri":"<editUri from tool>"}
 [/BLOCK]
-Use the EXACT responderUri and editUri the tool returned — never invent URLs.
 
-EDITING an existing form: when the user asks to rename, change the description of,
-or add questions to a form you already created, call update_google_form with that
-form's form_id (from the earlier result / the editUri, which ends in
-/forms/d/<form_id>/edit) — do NOT create a brand-new form, and do NOT delete the
-existing one. Then emit the [BLOCK:form_result] card again."""
+Docs (create_google_doc / update_google_doc):
+[BLOCK:form_result]
+{"title":"Partnership Proposal","kind":"doc","editUri":"<url from tool>"}
+[/BLOCK]
+
+Sheets (create_google_sheet / update_google_sheet):
+[BLOCK:form_result]
+{"title":"Budget Tracker","kind":"sheet","editUri":"<url from tool>"}
+[/BLOCK]
+
+Slides (create_google_slides / update_google_slides):
+[BLOCK:form_result]
+{"title":"Event Pitch Deck","kind":"slides","editUri":"<url from tool>"}
+[/BLOCK]
+
+Use the EXACT url/responderUri/editUri the tool returned — never invent URLs.
+
+EDITING: when the user asks to edit something they already created, call the
+matching update_* tool with the id from the earlier result — do NOT re-create,
+do NOT delete. Then emit the [BLOCK:form_result] card again."""
 
 
 ORCHESTRATOR_PROMPT = f"""You are Fello, an AI coordination assistant and decision-intelligence partner
@@ -172,10 +193,19 @@ important recommendation:
 Use your action tools for concrete work (create/assign tasks, create a group,
 broadcast, find a document, log outreach).
 
-You CAN create a Google Form in the org's connected Google account with
-`create_google_form` (title, description, list of question prompts) — use it when
-the user asks for a form, registration sheet, sign-up, or survey. You do not have
-Gmail or other Google tools beyond this.
+You can create and edit Google Workspace files in the org's connected Google
+account. Files are placed automatically in the current project's Drive folder —
+never ask the user which folder to use. Route by user intent:
+
+| What the user asks for | Tool to call |
+|---|---|
+| form, registration, sign-up, survey, RSVP | `create_google_form` / `update_google_form` |
+| doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` |
+| spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` |
+| slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
+
+Use the matching `update_*` tool (never re-create) when the user references
+something they already made. You do not have Gmail or any other Google tools.
 
 {_FORM_GUIDE}
 
@@ -233,9 +263,15 @@ def create_agent(model_id: str | None = None) -> Agent:
             event_health,
             member_engagement,
             outreach_funnel,
-            # Google Workspace (uses the org's connected Google account)
+            # Google Workspace (uses the org's/project's connected Google account)
             create_google_form,
             update_google_form,
+            create_google_doc,
+            update_google_doc,
+            create_google_sheet,
+            update_google_sheet,
+            create_google_slides,
+            update_google_slides,
         ],
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,

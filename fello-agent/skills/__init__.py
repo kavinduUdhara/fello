@@ -39,7 +39,16 @@ from .outreach import (
 )
 from .retrieval import find_document
 from .insights import event_health, member_engagement, outreach_funnel
-from .google_workspace import create_google_form, update_google_form
+from .google_workspace import (
+    create_google_form,
+    update_google_form,
+    create_google_doc,
+    update_google_doc,
+    create_google_sheet,
+    update_google_sheet,
+    create_google_slides,
+    update_google_slides,
+)
 from . import whatsapp_auth
 
 __all__ = [
@@ -78,6 +87,12 @@ __all__ = [
     # google workspace
     "create_google_form",
     "update_google_form",
+    "create_google_doc",
+    "update_google_doc",
+    "create_google_sheet",
+    "update_google_sheet",
+    "create_google_slides",
+    "update_google_slides",
     # gateway-side helpers (not model tools)
     "whatsapp_auth",
 ]
