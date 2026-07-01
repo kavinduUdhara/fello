@@ -21,9 +21,20 @@ def send_whatsapp_message(jid: str, message: str, tool_context: ToolContext) -> 
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
+    if not actor.event_id:
+        return {
+            "success": False,
+            "error": "No project is in focus — which project's WhatsApp number should this go through?",
+        }
     return _baileys.call(
         "send-message",
-        {"orgId": actor.org_id, "tenantId": actor.tenant_id, "jid": jid, "message": message},
+        {
+            "orgId": actor.org_id,
+            "tenantId": actor.tenant_id,
+            "projectId": actor.event_id,
+            "jid": jid,
+            "message": message,
+        },
     )
 
 
@@ -38,12 +49,18 @@ def create_whatsapp_group(name: str, member_jids: list[str], tool_context: ToolC
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
+    if not actor.event_id:
+        return {
+            "success": False,
+            "error": "No project is in focus — which project's WhatsApp number should this go through?",
+        }
     return _baileys.call(
         "create-group",
         {
             "orgId": actor.org_id,
             "tenantId": actor.tenant_id,
             "eventId": actor.event_id,
+            "projectId": actor.event_id,
             "name": name,
             "memberJids": member_jids,
             "createdByFello": True,
@@ -57,9 +74,20 @@ def add_member_to_group(group_jid: str, member_jid: str, tool_context: ToolConte
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
+    if not actor.event_id:
+        return {
+            "success": False,
+            "error": "No project is in focus — which project's WhatsApp number should this go through?",
+        }
     return _baileys.call(
         "add-member",
-        {"orgId": actor.org_id, "tenantId": actor.tenant_id, "groupJid": group_jid, "memberJid": member_jid},
+        {
+            "orgId": actor.org_id,
+            "tenantId": actor.tenant_id,
+            "projectId": actor.event_id,
+            "groupJid": group_jid,
+            "memberJid": member_jid,
+        },
     )
 
 
@@ -69,9 +97,18 @@ def broadcast_message(member_jids: list[str], message: str, tool_context: ToolCo
     if err:
         return {"sent": 0, "failed": len(member_jids), "errors": [err]}
     actor = identity(tool_context)
+    if not actor.event_id:
+        no_project_err = "No project is in focus — which project's WhatsApp number should this go through?"
+        return {"sent": 0, "failed": len(member_jids), "errors": [no_project_err]}
     result = _baileys.call(
         "broadcast",
-        {"orgId": actor.org_id, "tenantId": actor.tenant_id, "memberJids": member_jids, "message": message},
+        {
+            "orgId": actor.org_id,
+            "tenantId": actor.tenant_id,
+            "projectId": actor.event_id,
+            "memberJids": member_jids,
+            "message": message,
+        },
     )
     if not result.get("success"):
         return {
