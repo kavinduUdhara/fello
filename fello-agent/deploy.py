@@ -35,7 +35,7 @@ app = AdkApp(agent=root_agent, enable_tracing=False)
 # Agent Engine rejects env vars with empty values, so only pass ones that are set.
 _env_vars = {
     "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
-    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "meta/llama-3.1-8b-instruct"),
+    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
     "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct"),
     # GOOGLE_CLOUD_PROJECT is reserved on Agent Engine — the runtime provides it.
     "BAILEYS_API_URL":         os.environ.get("BAILEYS_API_URL", ""),
