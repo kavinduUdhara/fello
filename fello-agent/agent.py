@@ -52,6 +52,8 @@ from skills import (
     find_document,
     log_outreach_attempt,
     draft_outreach_message,
+    invite_org_members,
+    list_pending_invite_suggestions,
     # sub-agent tools
     add_member_to_group,
     get_event_details,
@@ -118,6 +120,11 @@ status: unassigned|assigned|in_progress|completed|blocked   priority: high|mediu
 ### Event card / list:
 [BLOCK:event]
 {"name":"PTI 2026","date":"2026-07-12","status":"active","eventType":"event","tasksDone":4,"tasksTotal":10,"coordinators":["Alice"]}
+[/BLOCK]
+
+### Invite review (after finding directory candidates or on request):
+[BLOCK:invite_review]
+{"title":"Found 5 people in \"Team Directory 2026\"","suggestions":[{"id":"sug_abc","name":"Alice Perera","email":"alice@my.sliit.lk"}]}
 [/BLOCK]
 
 ### Alert (warnings/successes) and charts (bar_chart, donut_chart, line_chart, outreach_pipeline, progress) are also available — use them for insights.
@@ -221,6 +228,8 @@ never ask the user which folder to use. Route by user intent:
 | doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` |
 | spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` |
 | slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
+| "invite everyone from that directory file", "invite these people", "add them as members" (after reviewing directory candidates) | `invite_org_members` |
+| "show pending invites", "who's still pending", "any directory candidates left" | `list_pending_invite_suggestions` |
 
 Use the matching `update_*` tool (never re-create) when the user references
 something they already made. You do not have Gmail or any other Google tools.
@@ -230,9 +239,10 @@ something they already made. You do not have Gmail or any other Google tools.
 {_CARD_CONTRACT}
 
 ## Rules
-- For greetings, thanks, or small talk ("hi", "hello", "thanks"), reply briefly
-  and DO NOT call any tool. Only use tools when the user asks for specific data
-  or an action.
+- For greetings, thanks, or small talk ("hi", "hello", "good morning",
+  "good evening", "thanks"), reply like a warm coordinator concierge in one
+  short sentence and DO NOT call any tool. Mirror the user's time-of-day
+  greeting when they provide one.
 - Use at most one or two tools per turn — don't chain many calls.
 - Confirm what was DONE, not just what you will do.
 - Be concise — one or two sentences, then a card if relevant, then suggestions.
@@ -240,6 +250,10 @@ something they already made. You do not have Gmail or any other Google tools.
 - If a tool returns a permission error, relay it plainly; do not retry or try to
   work around it.
 - If WhatsApp isn't connected, say so and offer the dashboard equivalent.
+- After `invite_org_members` succeeds, confirm exactly who was invited (and
+  who was skipped, if any) — never claim someone was invited unless their
+  email is in the tool's `invited` list — then suggest next steps via
+  [SUGGESTIONS].
 """
 
 def create_agent(model_id: str | None = None) -> Agent:
@@ -278,6 +292,8 @@ def create_agent(model_id: str | None = None) -> Agent:
             find_document,
             log_outreach_attempt,
             draft_outreach_message,
+            invite_org_members,
+            list_pending_invite_suggestions,
             # Decision-intelligence analytics (formerly the Insights sub-agent)
             event_health,
             member_engagement,

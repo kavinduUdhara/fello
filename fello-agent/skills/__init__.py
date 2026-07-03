@@ -50,6 +50,10 @@ from .google_workspace import (
     create_google_slides,
     update_google_slides,
 )
+from .invites import (
+    invite_org_members,
+    list_pending_invite_suggestions,
+)
 from . import whatsapp_auth
 
 __all__ = [
@@ -95,6 +99,9 @@ __all__ = [
     "update_google_sheet",
     "create_google_slides",
     "update_google_slides",
+    # invites
+    "invite_org_members",
+    "list_pending_invite_suggestions",
     # gateway-side helpers (not model tools)
     "whatsapp_auth",
 ]
