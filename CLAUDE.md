@@ -72,6 +72,8 @@ fello-frontend/          ← Next.js App Router frontend (primary workspace)
 
 These rules apply to every single UI component and page you write. Violating them requires explicit approval.
 
+**CRITICAL:** Refer to [DESIGN_PRINCIPLES.md](file:///home/kavindu/repos/fello/DESIGN_PRINCIPLES.md) in the workspace root for Kavindu's layout preferences, image containment/padding rules, default visuals, inline slug structures, and button designs.
+
 ### 3.1 Reference Repo
 
 Before writing any UI code, study the existing repo at:
