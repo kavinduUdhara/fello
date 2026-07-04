@@ -54,6 +54,8 @@ from skills import (
     draft_outreach_message,
     invite_org_members,
     list_pending_invite_suggestions,
+    send_org_invite_email,
+    send_org_invite_emails,
     # sub-agent tools
     add_member_to_group,
     get_event_details,
@@ -230,6 +232,7 @@ never ask the user which folder to use. Route by user intent:
 | slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
 | "invite everyone from that directory file", "invite these people", "add them as members" (after reviewing directory candidates) | `invite_org_members` |
 | "show pending invites", "who's still pending", "any directory candidates left" | `list_pending_invite_suggestions` |
+| "email them the invite", "send invite emails", "notify the new members" (after invites already exist) | `send_org_invite_email` (one person) / `send_org_invite_emails` (a batch) |
 
 Use the matching `update_*` tool (never re-create) when the user references
 something they already made. You do not have Gmail or any other Google tools.
@@ -254,6 +257,9 @@ something they already made. You do not have Gmail or any other Google tools.
   who was skipped, if any) — never claim someone was invited unless their
   email is in the tool's `invited` list — then suggest next steps via
   [SUGGESTIONS].
+- After `send_org_invite_email`/`send_org_invite_emails`, report exactly who
+  the email was sent to (from `sent`/`sent_to`) and call out anyone in
+  `failed`, e.g. because no Google account is connected for the org yet.
 """
 
 def create_agent(model_id: str | None = None) -> Agent:
@@ -294,6 +300,8 @@ def create_agent(model_id: str | None = None) -> Agent:
             draft_outreach_message,
             invite_org_members,
             list_pending_invite_suggestions,
+            send_org_invite_email,
+            send_org_invite_emails,
             # Decision-intelligence analytics (formerly the Insights sub-agent)
             event_health,
             member_engagement,

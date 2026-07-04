@@ -53,6 +53,8 @@ from .google_workspace import (
 from .invites import (
     invite_org_members,
     list_pending_invite_suggestions,
+    send_org_invite_email,
+    send_org_invite_emails,
 )
 from . import whatsapp_auth
 
@@ -102,6 +104,8 @@ __all__ = [
     # invites
     "invite_org_members",
     "list_pending_invite_suggestions",
+    "send_org_invite_email",
+    "send_org_invite_emails",
     # gateway-side helpers (not model tools)
     "whatsapp_auth",
 ]
