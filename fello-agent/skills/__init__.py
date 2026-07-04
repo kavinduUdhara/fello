@@ -51,8 +51,10 @@ from .google_workspace import (
     update_google_slides,
 )
 from .invites import (
+    invite_member,
     invite_org_members,
     list_pending_invite_suggestions,
+    remove_member,
     send_org_invite_email,
     send_org_invite_emails,
 )
@@ -102,8 +104,10 @@ __all__ = [
     "create_google_slides",
     "update_google_slides",
     # invites
+    "invite_member",
     "invite_org_members",
     "list_pending_invite_suggestions",
+    "remove_member",
     "send_org_invite_email",
     "send_org_invite_emails",
     # gateway-side helpers (not model tools)

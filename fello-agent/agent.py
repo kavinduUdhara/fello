@@ -52,8 +52,10 @@ from skills import (
     find_document,
     log_outreach_attempt,
     draft_outreach_message,
+    invite_member,
     invite_org_members,
     list_pending_invite_suggestions,
+    remove_member,
     send_org_invite_email,
     send_org_invite_emails,
     # sub-agent tools
@@ -230,6 +232,8 @@ never ask the user which folder to use. Route by user intent:
 | doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` |
 | spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` |
 | slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
+| "add <name> to the org", "invite <email>", "add this person as a member" (one specific person named directly) | `invite_member` |
+| "remove <name/email>", "take them off the team", "revoke their invite" | `remove_member` |
 | "invite everyone from that directory file", "invite these people", "add them as members" (after reviewing directory candidates) | `invite_org_members` |
 | "show pending invites", "who's still pending", "any directory candidates left" | `list_pending_invite_suggestions` |
 | "email them the invite", "send invite emails", "notify the new members" (after invites already exist) | `send_org_invite_email` (one person) / `send_org_invite_emails` (a batch) |
@@ -260,6 +264,14 @@ something they already made. You do not have Gmail or any other Google tools.
 - After `send_org_invite_email`/`send_org_invite_emails`, report exactly who
   the email was sent to (from `sent`/`sent_to`) and call out anyone in
   `failed`, e.g. because no Google account is connected for the org yet.
+- `invite_member` already sends the invite email (and a WhatsApp nudge, if a
+  phone was given) itself in one call — never call `send_org_invite_email`
+  again afterward for the same person. Report what actually happened using
+  its `emailed`/`whatsapp_sent` fields and surface any `email_error`/
+  `whatsapp_error` plainly (e.g. no Google account connected, or an invalid
+  phone number) rather than claiming success anyway.
+- If the user names someone to add/remove but doesn't give an email, ask for
+  it — email is required to invite or remove someone, never guess one.
 """
 
 def create_agent(model_id: str | None = None) -> Agent:
@@ -298,8 +310,10 @@ def create_agent(model_id: str | None = None) -> Agent:
             find_document,
             log_outreach_attempt,
             draft_outreach_message,
+            invite_member,
             invite_org_members,
             list_pending_invite_suggestions,
+            remove_member,
             send_org_invite_email,
             send_org_invite_emails,
             # Decision-intelligence analytics (formerly the Insights sub-agent)

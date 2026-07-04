@@ -1,9 +1,12 @@
 """WhatsApp communication skills.
 
-These call the Baileys gateway on the GCE VM via its internal API. When the
-gateway is not configured (BAILEYS_API_URL unset), calls degrade gracefully so
-the dashboard demo still works. Every send is capability-gated and runs under
-the verified org scope.
+These call the Baileys gateway through fello-backend's agent-facing relay
+(see _backend.py) — the gateway itself is not reachable from outside its VM,
+only the backend is, so the agent (running remotely on Vertex AI Agent
+Engine) goes through the backend rather than hitting the gateway directly.
+When the relay isn't configured (BACKEND_API_URL/AGENT_BACKEND_SECRET unset),
+calls degrade gracefully so the dashboard demo still works. Every send is
+capability-gated and runs under the verified org scope.
 
 Channel resolution: a project (event) in focus gets its own dedicated number
 (the raw project id is the gateway session key); with no project in focus,
@@ -19,7 +22,7 @@ from google.adk.tools import ToolContext
 
 import authz
 from context import identity
-from . import _baileys
+from . import _backend
 
 
 def _channel_key(actor) -> str:
@@ -36,7 +39,7 @@ def send_whatsapp_message(jid: str, message: str, tool_context: ToolContext) -> 
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
-    return _baileys.call(f"sessions/{_channel_key(actor)}/send", {"jid": jid, "message": message})
+    return _backend.call(f"whatsapp/{_channel_key(actor)}/send", {"jid": jid, "message": message})
 
 
 def create_whatsapp_group(name: str, member_jids: list[str], tool_context: ToolContext) -> dict:
@@ -51,8 +54,8 @@ def create_whatsapp_group(name: str, member_jids: list[str], tool_context: ToolC
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
-    return _baileys.call(
-        f"sessions/{_channel_key(actor)}/groups",
+    return _backend.call(
+        f"whatsapp/{_channel_key(actor)}/groups",
         {"name": name, "participants": member_jids},
     )
 
@@ -63,8 +66,8 @@ def add_member_to_group(group_jid: str, member_jid: str, tool_context: ToolConte
     if err:
         return {"success": False, "error": err}
     actor = identity(tool_context)
-    return _baileys.call(
-        f"sessions/{_channel_key(actor)}/groups/{group_jid}/participants",
+    return _backend.call(
+        f"whatsapp/{_channel_key(actor)}/groups/{group_jid}/participants",
         {"participants": [member_jid], "action": "add"},
     )
 
@@ -80,7 +83,7 @@ def broadcast_message(member_jids: list[str], message: str, tool_context: ToolCo
     sent = 0
     errors: list[str] = []
     for jid in member_jids:
-        result = _baileys.call(f"sessions/{channel_key}/send", {"jid": jid, "message": message})
+        result = _backend.call(f"whatsapp/{channel_key}/send", {"jid": jid, "message": message})
         if result.get("success"):
             sent += 1
         else:

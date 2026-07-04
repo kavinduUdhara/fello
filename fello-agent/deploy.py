@@ -38,8 +38,10 @@ _env_vars = {
     "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
     "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct"),
     # GOOGLE_CLOUD_PROJECT is reserved on Agent Engine — the runtime provides it.
-    "BAILEYS_API_URL":         os.environ.get("BAILEYS_API_URL", ""),
-    "BAILEYS_API_SECRET":      os.environ.get("BAILEYS_API_SECRET", ""),
+    # The gateway itself is not reachable from outside its VM — the agent goes
+    # through the backend's /agent/whatsapp/* relay instead (see skills/_backend.py).
+    "BACKEND_API_URL":         os.environ.get("BACKEND_API_URL", ""),
+    "AGENT_BACKEND_SECRET":    os.environ.get("AGENT_BACKEND_SECRET", ""),
     "DATABASE_URL":            os.environ.get("DATABASE_URL", ""),
     # Needed to refresh an org's Google token for Forms/Docs creation.
     "GOOGLE_OAUTH_CLIENT_ID":     os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
