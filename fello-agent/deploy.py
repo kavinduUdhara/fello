@@ -49,8 +49,12 @@ _env_vars = {
 }
 _env_vars = {k: v for k, v in _env_vars.items() if v}
 
-deployed = agent_engines.create(
-    app,
+# Update the existing engine in place when AGENT_ENGINE_RESOURCE_NAME is set —
+# creating a new resource on every deploy orphans the pointer baked into the
+# frontend (apphosting.yaml), the backend VM's .env, and .env.local files.
+_EXISTING = os.environ.get("AGENT_ENGINE_RESOURCE_NAME", "")
+
+_deploy_kwargs = dict(
     requirements=[
         # Provides the `vertexai` module the Agent Engine runtime needs to load
         # the pickled agent. Without it the container fails to start.
@@ -75,6 +79,12 @@ deployed = agent_engines.create(
     env_vars=_env_vars,
     display_name="fello-coordinator",
 )
+
+if _EXISTING:
+    print(f"Updating existing engine {_EXISTING} in place...")
+    deployed = agent_engines.update(resource_name=_EXISTING, agent_engine=app, **_deploy_kwargs)
+else:
+    deployed = agent_engines.create(app, **_deploy_kwargs)
 
 print("\n✓ Deployed successfully!")
 print(f"  Resource name: {deployed.resource_name}")
