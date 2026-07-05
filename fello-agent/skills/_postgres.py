@@ -39,8 +39,14 @@ def _connect():
         return _conn
 
 
-def query(sql: str, params: tuple) -> list[dict]:
+def query(sql: str, params: tuple, org_id: str | None = None) -> list[dict]:
     """Run a parameterized read query and return a list of dict rows.
+
+    ``org_id`` (the verified org from agent context) is set as the ``app.org_id``
+    GUC on the connection so the RLS policies in db/migrations/003 scope every
+    row to that org at the database layer — a second isolation layer on top of
+    the explicit ``WHERE org_id = ...`` in each query. Without it, RLS matches
+    no rows (fail closed).
 
     Raises RuntimeError if Postgres is not configured — callers should check
     :func:`available` first and return a graceful message to the user.
@@ -48,6 +54,11 @@ def query(sql: str, params: tuple) -> list[dict]:
     if not available():
         raise RuntimeError("Document index (Cloud SQL) is not configured.")
     conn = _connect()
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(sql, params)
-        return [dict(r) for r in cur.fetchall()]
+    with _lock:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # is_local=false: session-scoped (autocommit means there is no
+            # transaction to scope to); overwritten on every call so the shared
+            # connection never carries a stale org between tools.
+            cur.execute("SELECT set_config('app.org_id', %s, false)", (org_id or "",))
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]

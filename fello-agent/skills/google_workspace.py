@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover
     httpx = None  # type: ignore
 
 _FORMS_API        = "https://forms.googleapis.com/v1/forms"
+_CALENDAR_API     = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 _DOCS_API         = "https://docs.googleapis.com/v1/documents"
 _SHEETS_API       = "https://sheets.googleapis.com/v4/spreadsheets"
 _SLIDES_API       = "https://slides.googleapis.com/v1/presentations"
@@ -615,6 +616,122 @@ def update_google_slides(
         }
     except Exception as e:
         return {"success": False, "error": f"Google Slides API error: {_detail(e)}"}
+
+
+def create_calendar_event(
+    title: str,
+    start: str,
+    end: str,
+    description: str,
+    attendee_emails: list[str],
+    tool_context: ToolContext,
+) -> dict:
+    """Create a Google Calendar event in the org's connected Google account.
+
+    Use for scheduling meetings, interview slots, deadlines-as-events, or any
+    "put it on the calendar" request (e.g. volunteer interview time slots).
+
+    Args:
+        title: Event title (e.g. "PTI volunteer interview — slot 1").
+        start: Start time as ISO 8601 with timezone offset, e.g. "2026-07-12T10:00:00+05:30".
+        end: End time in the same format (must be after start).
+        description: Optional details shown in the invite (or "").
+        attendee_emails: Emails to invite (they get a Google Calendar invite), or [].
+
+    Returns:
+        dict with success, event_id, and htmlLink (the calendar link), or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_EVENTS_MANAGE)
+    if err:
+        return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+    if not title or not start or not end:
+        return {"success": False, "error": "title, start and end are all required."}
+
+    actor = identity(tool_context)
+    token, terr = get_access_token(actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    body: dict = {
+        "summary": title,
+        "start": {"dateTime": start},
+        "end": {"dateTime": end},
+    }
+    if description:
+        body["description"] = description
+    if attendee_emails:
+        body["attendees"] = [{"email": e} for e in attendee_emails if e and "@" in e]
+
+    hdrs = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        created = httpx.post(
+            _CALENDAR_API,
+            headers=hdrs,
+            params={"sendUpdates": "all"} if attendee_emails else None,
+            json=body,
+            timeout=20.0,
+        )
+        created.raise_for_status()
+        evt = created.json()
+        return {
+            "success": True,
+            "event_id": evt.get("id"),
+            "htmlLink": evt.get("htmlLink"),
+            "start": start,
+            "end": end,
+            "attendees": len(body.get("attendees", [])),
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Google Calendar API error: {_detail(e)}"}
+
+
+def list_calendar_events(tool_context: ToolContext, time_min: str, time_max: str) -> dict:
+    """List upcoming Google Calendar events in the org's connected account. Read-only.
+
+    Args:
+        time_min: ISO 8601 lower bound with offset, e.g. "2026-07-05T00:00:00+05:30".
+        time_max: ISO 8601 upper bound (e.g. one/two weeks later).
+
+    Returns:
+        dict with events: [{title, start, end, htmlLink}], or an error.
+    """
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+
+    actor = identity(tool_context)
+    token, terr = get_access_token(actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    try:
+        resp = httpx.get(
+            _CALENDAR_API,
+            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": "25",
+            },
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+        events = [
+            {
+                "title": it.get("summary"),
+                "start": (it.get("start") or {}).get("dateTime") or (it.get("start") or {}).get("date"),
+                "end": (it.get("end") or {}).get("dateTime") or (it.get("end") or {}).get("date"),
+                "htmlLink": it.get("htmlLink"),
+            }
+            for it in items
+        ]
+        return {"success": True, "events": events, "count": len(events)}
+    except Exception as e:
+        return {"success": False, "error": f"Google Calendar API error: {_detail(e)}"}
 
 
 def _detail(e: Exception) -> str:

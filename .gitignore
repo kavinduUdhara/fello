@@ -1,0 +1,27 @@
+# Secrets — never commit environment files or credentials anywhere in the tree
+.env
+.env.*
+!.env.example
+*.pem
+serviceAccountKey.json
+*-service-account*.json
+
+# Baileys WhatsApp session credentials (gateway VM state)
+sessions/
+
+# Dependencies / build output
+node_modules/
+.next/
+out/
+build/
+dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local tooling
+.firebase/
+firebase-debug.log*
+*.tsbuildinfo
+.DS_Store

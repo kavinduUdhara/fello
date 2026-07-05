@@ -74,14 +74,18 @@ def find_document(
     try:
         if across_events:
             rows = _postgres.query(
-                _SEARCH_SQL_CROSS_EVENT, (search_terms, actor.org_id, search_terms)
+                _SEARCH_SQL_CROSS_EVENT,
+                (search_terms, actor.org_id, search_terms),
+                org_id=actor.org_id,
             )
         else:
             evt = resolve_event_id(tool_context, event_id)
             if not evt:
                 return {"matches": [], "resolution": "none", "message": "Which event's files should I search?"}
             rows = _postgres.query(
-                _SEARCH_SQL, (search_terms, actor.org_id, evt, search_terms)
+                _SEARCH_SQL,
+                (search_terms, actor.org_id, evt, search_terms),
+                org_id=actor.org_id,
             )
     except Exception as e:
         return {"matches": [], "resolution": "unavailable", "message": f"Search failed: {e}"}

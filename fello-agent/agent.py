@@ -75,6 +75,8 @@ from skills import (
     update_google_sheet,
     create_google_slides,
     update_google_slides,
+    create_calendar_event,
+    list_calendar_events,
 )
 
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
@@ -232,6 +234,8 @@ never ask the user which folder to use. Route by user intent:
 | doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` |
 | spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` |
 | slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
+| "schedule a meeting", "book interview slots", "put it on the calendar", "send a calendar invite" | `create_calendar_event` (one call per slot; ISO times with timezone offset) |
+| "what's on the calendar", "any meetings this week" | `list_calendar_events` |
 | "add <name> to the org", "invite <email>", "add this person as a member" (one specific person named directly) | `invite_member` |
 | "remove <name/email>", "take them off the team", "revoke their invite" | `remove_member` |
 | "invite everyone from that directory file", "invite these people", "add them as members" (after reviewing directory candidates) | `invite_org_members` |
@@ -239,7 +243,9 @@ never ask the user which folder to use. Route by user intent:
 | "email them the invite", "send invite emails", "notify the new members" (after invites already exist) | `send_org_invite_email` (one person) / `send_org_invite_emails` (a batch) |
 
 Use the matching `update_*` tool (never re-create) when the user references
-something they already made. You do not have Gmail or any other Google tools.
+something they already made. Email is only ever sent through the invite tools
+(`invite_member`, `send_org_invite_email(s)`) — you have no general-purpose
+Gmail tool, and no Google tools beyond the ones listed above.
 
 {_FORM_GUIDE}
 
@@ -329,6 +335,8 @@ def create_agent(model_id: str | None = None) -> Agent:
             update_google_sheet,
             create_google_slides,
             update_google_slides,
+            create_calendar_event,
+            list_calendar_events,
         ],
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,
