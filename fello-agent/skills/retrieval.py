@@ -1,5 +1,6 @@
 """Document retrieval — weighted PostgreSQL full-text search over the indexed
-`documents` table, supplemented by a live Google Drive search.
+`documents` table, falling back to a live Google Drive search when the index
+has nothing.
 
 Implements the retrieval pipeline from FELLO_ADK_CAPABILITIES_AND_SECURITY.md
 ("Document Retrieval — RAG-Style System Without a Vector Database"). When
@@ -8,12 +9,13 @@ weighted full-text query (filename > AI description > AI summary) scoped to the
 verified org and the event in focus — fast, explainable, and tenant-isolated.
 
 The Postgres index is only as fresh as the last drive-sync run, so it can miss
-files uploaded directly to Drive since then. To cover that gap, `find_document`
-also runs a live Drive `files.list` search scoped to the project's own Drive
-folder (using the org's connected Google account — see `_google.py`), and if
-the strongest match is a Google Doc, fetches its live text via the Docs API so
-the agent can quote the actual current content instead of a possibly-stale
-AI-generated summary.
+files uploaded directly to Drive since then. `find_document` checks the index
+first; only if that comes back with zero rows does it call
+`_search_drive_live` — a live Drive `files.list` search scoped to the relevant
+Drive folder (using the org's connected Google account — see `_google.py`).
+If the strongest match is a Google Doc, its live text is fetched via the Docs
+API so the agent can quote the actual current content instead of a
+possibly-stale AI-generated summary.
 
 The org_id used to scope every query comes from the verified agent context, not
 from the user's message (CLAUDE.md §5.3 Cloud SQL row isolation).
@@ -74,33 +76,67 @@ _SEARCH_SQL_CROSS_EVENT = """
 """
 
 
-def _live_drive_search(token: str, folder_id: str, search_terms: str) -> list[dict]:
-    """Live Drive search within one project's folder — catches files the
-    periodic drive-sync index hasn't picked up yet. Best-effort: any failure
+_DRIVE_STOPWORDS = {
+    "a", "an", "the", "of", "for", "and", "or", "in", "on", "to", "doc",
+    "docs", "document", "documents", "file", "files", "find", "search",
+}
+
+
+def _escape_drive_term(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _drive_search_call(token: str, folder_id: str, q: str, page_size: int = 5) -> list[dict]:
+    """One Drive `files.list` call, scoped to a folder. Shared Drives enabled
+    (`corpora=allDrives`) since an org's connected folder may live in one, not
+    just "My Drive" — the default search otherwise silently finds nothing there.
+    """
+    resp = httpx.get(
+        _DRIVE_FILES_API,
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "q": f"'{folder_id}' in parents and trashed = false and ({q})",
+            "fields": "files(id,name,mimeType,webViewLink,modifiedTime)",
+            "pageSize": page_size,
+            "orderBy": "modifiedTime desc",
+            "corpora": "allDrives",
+            "includeItemsFromAllDrives": "true",
+            "supportsAllDrives": "true",
+        },
+        timeout=20.0,
+    )
+    resp.raise_for_status()
+    return resp.json().get("files", [])
+
+
+def _search_drive_live(token: str, folder_id: str, search_terms: str) -> list[dict]:
+    """Live Drive search within one folder — the fallback used only when the
+    Postgres index has nothing (see find_document). Best-effort: any failure
     (expired grant, API hiccup) just yields no live results, never an error
-    surfaced to the user — the Postgres path already covers that case.
+    surfaced to the user — the "index came up empty" message already covers it.
+
+    Uses Drive's advanced search grammar in two passes: an exact-phrase match
+    first (precise), then — only if that finds nothing — a broader pass that
+    ORs the individual significant words together, so a loosely-worded query
+    like "excom doc" still has a shot at matching a file named "Executive
+    Committee List" via shared words, instead of requiring a literal substring.
     """
     if httpx is None or not folder_id:
         return []
-    safe_term = search_terms.replace("\\", "\\\\").replace("'", "\\'")
-    q = (
-        f"'{folder_id}' in parents and trashed = false "
-        f"and (name contains '{safe_term}' or fullText contains '{safe_term}')"
-    )
+    safe_phrase = _escape_drive_term(search_terms)
     try:
-        resp = httpx.get(
-            _DRIVE_FILES_API,
-            headers={"Authorization": f"Bearer {token}"},
-            params={
-                "q": q,
-                "fields": "files(id,name,mimeType,webViewLink)",
-                "pageSize": 5,
-                "orderBy": "modifiedTime desc",
-            },
-            timeout=20.0,
+        exact = _drive_search_call(
+            token, folder_id,
+            f"name contains '{safe_phrase}' or fullText contains '{safe_phrase}'",
         )
-        resp.raise_for_status()
-        return resp.json().get("files", [])
+        if exact:
+            return exact
+
+        words = [w for w in search_terms.lower().split() if len(w) > 2 and w not in _DRIVE_STOPWORDS]
+        if not words:
+            return []
+        clauses = [f"name contains '{_escape_drive_term(w)}' or fullText contains '{_escape_drive_term(w)}'" for w in words]
+        return _drive_search_call(token, folder_id, " or ".join(clauses), page_size=8)
     except Exception:
         return []
 
@@ -153,12 +189,14 @@ def find_document(
 ) -> dict:
     """Find a document by natural-language description.
 
-    Searches the indexed document table first (fast, ranked, explainable), then
-    supplements with a live Google Drive search inside the relevant Drive
-    folder to catch anything uploaded since the last index sync. If the
-    strongest match is a Google Doc, its current text is fetched via the Docs
-    API and returned in `content_excerpt` so you can quote or summarize it
-    directly instead of just linking to it.
+    Searches the indexed document table first (fast, ranked, explainable).
+    Only if that finds nothing does it fall back to a live Google Drive search
+    (with a broader keyword-OR pass if an exact-phrase Drive search also comes
+    up empty) inside the relevant Drive folder — this catches anything
+    uploaded since the last index sync. If the strongest match is a Google
+    Doc, its current text is fetched via the Docs API and returned in
+    `content_excerpt` so you can quote or summarize it directly instead of
+    just linking to it.
 
     When no event is in focus and none is given, this searches the
     organization's own top-level documents (not tied to any event) — do NOT
@@ -212,35 +250,29 @@ def find_document(
             except Exception as e:
                 index_error = str(e)
 
-    # Live Drive supplement — only meaningful for one folder at a time, so it
-    # never runs for the cross-event case (that spans every event's folder).
-    live_files: list[dict] = []
-    if not across_events and evt:
+    # Live Drive fallback — ONLY when the index came back with nothing. If the
+    # index already found matches, trust it and skip the extra API round-trip;
+    # a live search never runs for the cross-event case either (it spans every
+    # event's folder, no single folder to search).
+    matches: list[dict] = list(indexed_rows)
+    if not matches and not across_events and evt:
         token, folder_id = _token_and_folder(evt, actor.org_id)
         if token and folder_id:
-            live_files = _live_drive_search(token, folder_id, search_terms)
-
-    # Merge, de-duplicating anything the index already returned (matched by
-    # Drive file id) so the same file never appears twice.
-    known_ids = {r.get("drive_file_id") for r in indexed_rows if r.get("drive_file_id")}
-    matches: list[dict] = list(indexed_rows)
-    for f in live_files:
-        if f.get("id") in known_ids:
-            continue
-        matches.append(
-            {
-                "file_name": f.get("name"),
-                "drive_file_id": f.get("id"),
-                "document_type": "google_doc" if f.get("mimeType") == _GOOGLE_DOC_MIME else None,
-                "description": None,
-                "url": f.get("webViewLink"),
-                "rank": None,  # live results aren't ranked against the FTS score
-                "source": "drive_live",
-            }
-        )
+            for f in _search_drive_live(token, folder_id, search_terms):
+                matches.append(
+                    {
+                        "file_name": f.get("name"),
+                        "drive_file_id": f.get("id"),
+                        "document_type": "google_doc" if f.get("mimeType") == _GOOGLE_DOC_MIME else None,
+                        "description": None,
+                        "url": f.get("webViewLink"),
+                        "rank": None,  # live results aren't ranked against the FTS score
+                        "source": "drive_live",
+                    }
+                )
 
     if not matches:
-        if index_error and not live_files:
+        if index_error:
             return {
                 "matches": [],
                 "resolution": "unavailable",
