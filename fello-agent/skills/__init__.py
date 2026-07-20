@@ -9,6 +9,7 @@ from .communication import (
     send_whatsapp_message,
     create_whatsapp_group,
     add_member_to_group,
+    update_whatsapp_group,
     broadcast_message,
 )
 from .tasks import (
@@ -67,6 +68,7 @@ __all__ = [
     "send_whatsapp_message",
     "create_whatsapp_group",
     "add_member_to_group",
+    "update_whatsapp_group",
     "broadcast_message",
     # tasks
     "create_task",

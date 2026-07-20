@@ -40,6 +40,7 @@ from skills import (
     # orchestrator direct tools
     send_whatsapp_message,
     create_whatsapp_group,
+    update_whatsapp_group,
     broadcast_message,
     create_task,
     update_task_status,
@@ -301,6 +302,15 @@ Gmail tool, and no Google tools beyond the ones listed above.
 - If a tool returns a permission error, relay it plainly; do not retry or try to
   work around it.
 - If WhatsApp isn't connected, say so and offer the dashboard equivalent.
+- Use `update_whatsapp_group` to rename a group or change its icon — never say
+  this isn't possible. For "make the group match the organization" (name
+  and/or picture), call it with `use_organization_branding=True` rather than
+  looking up the name/logo yourself first.
+- `create_whatsapp_group`/`add_member_to_group` results include an `invited`
+  list for anyone WhatsApp's privacy settings blocked from a direct add — the
+  gateway already DM'd them an invite link automatically. Report those people
+  as "sent an invite link to join" — never claim they were added directly,
+  and never say there's no way to invite someone to an existing group.
 - NEVER invent a document's title, link, or content. After `find_document`,
   only claim you found something when `resolution` is "single" or "multiple"
   AND `matches` is non-empty — copy the `file_name`/`drive_file_id`/`description`
@@ -353,6 +363,8 @@ def create_agent(model_id: str | None = None) -> Agent:
             # Coordination actions
             send_whatsapp_message,
             create_whatsapp_group,
+            add_member_to_group,
+            update_whatsapp_group,
             broadcast_message,
             create_task,
             update_task_status,
