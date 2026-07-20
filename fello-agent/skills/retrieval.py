@@ -82,20 +82,65 @@ _DRIVE_STOPWORDS = {
 }
 
 
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+# Bounds the recursive folder walk below — a typical org tree (root -> event
+# -> team node, per drive-sync.js's KNOWN_TEAM_NODES) is only 2-3 levels deep
+# with a handful of folders per level, so this is generous headroom, not a
+# realistic ceiling to hit.
+_MAX_SUBFOLDERS = 50
+
+
 def _escape_drive_term(term: str) -> str:
     return term.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _drive_search_call(token: str, folder_id: str, q: str, page_size: int = 5) -> list[dict]:
-    """One Drive `files.list` call, scoped to a folder. Shared Drives enabled
-    (`corpora=allDrives`) since an org's connected folder may live in one, not
-    just "My Drive" — the default search otherwise silently finds nothing there.
+def _list_all_subfolder_ids(token: str, root_folder_id: str) -> list[str]:
+    """BFS every subfolder under root_folder_id, mirroring drive-sync.js's
+    walkFolderTree. Drive's `'X' in parents` query only matches DIRECT
+    children of X, so without this a file nested in any subfolder (which is
+    how real org/event folders are structured) would never be found live.
     """
+    ids = [root_folder_id]
+    queue = [root_folder_id]
+    while queue and len(ids) < _MAX_SUBFOLDERS:
+        current = queue.pop(0)
+        try:
+            resp = httpx.get(
+                _DRIVE_FILES_API,
+                headers={"Authorization": f"Bearer {token}"},
+                params={
+                    "q": f"'{current}' in parents and trashed = false and mimeType = '{_FOLDER_MIME}'",
+                    "fields": "files(id)",
+                    "pageSize": 100,
+                    "corpora": "allDrives",
+                    "includeItemsFromAllDrives": "true",
+                    "supportsAllDrives": "true",
+                },
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            for f in resp.json().get("files", []):
+                fid = f["id"]
+                if fid not in ids and len(ids) < _MAX_SUBFOLDERS:
+                    ids.append(fid)
+                    queue.append(fid)
+        except Exception:
+            break  # partial tree beats none — search whatever we found so far
+    return ids
+
+
+def _drive_search_call(token: str, folder_ids: list[str], q: str, page_size: int = 5) -> list[dict]:
+    """One Drive `files.list` call, scoped to a set of folders (root + every
+    subfolder under it). Shared Drives enabled (`corpora=allDrives`) since an
+    org's connected folder may live in one, not just "My Drive" — the default
+    search otherwise silently finds nothing there.
+    """
+    parents_clause = " or ".join(f"'{fid}' in parents" for fid in folder_ids)
     resp = httpx.get(
         _DRIVE_FILES_API,
         headers={"Authorization": f"Bearer {token}"},
         params={
-            "q": f"'{folder_id}' in parents and trashed = false and ({q})",
+            "q": f"({parents_clause}) and trashed = false and ({q})",
             "fields": "files(id,name,mimeType,webViewLink,modifiedTime)",
             "pageSize": page_size,
             "orderBy": "modifiedTime desc",
@@ -110,10 +155,11 @@ def _drive_search_call(token: str, folder_id: str, q: str, page_size: int = 5) -
 
 
 def _search_drive_live(token: str, folder_id: str, search_terms: str) -> list[dict]:
-    """Live Drive search within one folder — the fallback used only when the
-    Postgres index has nothing (see find_document). Best-effort: any failure
-    (expired grant, API hiccup) just yields no live results, never an error
-    surfaced to the user — the "index came up empty" message already covers it.
+    """Live Drive search under one folder (recursively) — the fallback used
+    only when the Postgres index has nothing (see find_document). Best-effort:
+    any failure (expired grant, API hiccup) just yields no live results, never
+    an error surfaced to the user — the "index came up empty" message already
+    covers it.
 
     Uses Drive's advanced search grammar in two passes: an exact-phrase match
     first (precise), then — only if that finds nothing — a broader pass that
@@ -123,10 +169,11 @@ def _search_drive_live(token: str, folder_id: str, search_terms: str) -> list[di
     """
     if httpx is None or not folder_id:
         return []
-    safe_phrase = _escape_drive_term(search_terms)
     try:
+        folder_ids = _list_all_subfolder_ids(token, folder_id)
+        safe_phrase = _escape_drive_term(search_terms)
         exact = _drive_search_call(
-            token, folder_id,
+            token, folder_ids,
             f"name contains '{safe_phrase}' or fullText contains '{safe_phrase}'",
         )
         if exact:
@@ -136,7 +183,7 @@ def _search_drive_live(token: str, folder_id: str, search_terms: str) -> list[di
         if not words:
             return []
         clauses = [f"name contains '{_escape_drive_term(w)}' or fullText contains '{_escape_drive_term(w)}'" for w in words]
-        return _drive_search_call(token, folder_id, " or ".join(clauses), page_size=8)
+        return _drive_search_call(token, folder_ids, " or ".join(clauses), page_size=8)
     except Exception:
         return []
 
