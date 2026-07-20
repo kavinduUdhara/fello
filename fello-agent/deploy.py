@@ -49,6 +49,11 @@ _env_vars = {
     "BACKEND_API_URL":         os.environ.get("BACKEND_API_URL", ""),
     "AGENT_BACKEND_SECRET":    os.environ.get("AGENT_BACKEND_SECRET", ""),
     "DATABASE_URL":            os.environ.get("DATABASE_URL", ""),
+    # Agent Engine's serverless runtime has no stable egress IP to add to Cloud
+    # SQL's authorized-networks allowlist, so skills/_postgres.py connects via
+    # the Cloud SQL Python Connector (IAM auth) instead of a raw TCP connection
+    # when this is set. Format: "PROJECT:REGION:INSTANCE".
+    "INSTANCE_CONNECTION_NAME": os.environ.get("INSTANCE_CONNECTION_NAME", ""),
     # Needed to refresh an org's Google token for Forms/Docs creation.
     "GOOGLE_OAUTH_CLIENT_ID":     os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""),
     "GOOGLE_OAUTH_CLIENT_SECRET": os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", ""),
@@ -72,6 +77,7 @@ _deploy_kwargs = dict(
         "httpx>=0.27.0",
         "python-dotenv>=1.0.0",
         "psycopg2-binary>=2.9.9",
+        "cloud-sql-python-connector[pg8000]>=1.12.0",
     ],
     # Local source the pickled agent references by module — must be shipped to
     # the container or it fails to start with ModuleNotFoundError (skills, etc.).
