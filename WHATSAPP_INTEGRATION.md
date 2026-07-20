@@ -187,10 +187,19 @@ Project: `fello-pt`. Real, billable GCP infrastructure (not a simulation).
 ### 4.3 Redeploying code changes to the VM
 There's no CI/CD for the VM yet — it's a manual `tar` + `scp` + `pm2
 restart` cycle:
+**`--exclude='.env*'` is not optional.** Both `gateway/.env` and `backend/.env`
+hold VM-specific secrets (`BAILEYS_API_SECRET`, `GATEWAY_WEBHOOK_SECRET`,
+`DATABASE_URL`, etc.) that differ from whatever `.env` sits in your local dev
+checkout. Omitting the exclude silently bundles your local `.env` into the
+tarball and **overwrites the VM's real secrets on extract** — this has
+happened once already (2026-07-20: a backend redeploy clobbered
+`BAILEYS_API_SECRET`, breaking WhatsApp connect with a cryptic "gateway
+unavailable" 502 until the secret was manually re-synced from `gateway/.env`).
+
 ```bash
 cd fello-backend
-tar --exclude=node_modules --exclude=sessions -czf /tmp/gateway.tar.gz gateway
-tar --exclude=node_modules -czf /tmp/backend.tar.gz backend
+tar --exclude=node_modules --exclude=sessions --exclude='.env*' -czf /tmp/gateway.tar.gz gateway
+tar --exclude=node_modules --exclude='.env*' -czf /tmp/backend.tar.gz backend
 gcloud compute scp /tmp/gateway.tar.gz /tmp/backend.tar.gz fello-gateway:~/ \
   --project=fello-pt --zone=us-central1-a
 
