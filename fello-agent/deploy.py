@@ -34,9 +34,15 @@ app = AdkApp(agent=root_agent, enable_tracing=False)
 
 # Agent Engine rejects env vars with empty values, so only pass ones that are set.
 _env_vars = {
-    "NVIDIA_API_KEY":          os.environ["NVIDIA_API_KEY"],
-    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-    "NVIDIA_FALLBACK_MODEL":   os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct"),
+    # Gemini via Vertex AI — Agent Engine's own service account provides ADC,
+    # so no API key is needed in production.
+    "GOOGLE_GENAI_USE_VERTEXAI": "TRUE",
+    "GEMINI_PRIMARY_MODEL":    os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash"),
+    "GEMINI_FALLBACK_MODEL":   os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite"),
+    # NVIDIA NIM alternate provider — set MODEL_PROVIDER=nvidia to use it.
+    "MODEL_PROVIDER":          os.environ.get("MODEL_PROVIDER", ""),
+    "NVIDIA_API_KEY":          os.environ.get("NVIDIA_API_KEY", ""),
+    "NVIDIA_PRIMARY_MODEL":    os.environ.get("NVIDIA_PRIMARY_MODEL", ""),
     # GOOGLE_CLOUD_PROJECT is reserved on Agent Engine — the runtime provides it.
     # The gateway itself is not reachable from outside its VM — the agent goes
     # through the backend's /agent/whatsapp/* relay instead (see skills/_backend.py).
@@ -61,6 +67,7 @@ _deploy_kwargs = dict(
         "google-cloud-aiplatform[agent_engines]>=1.93.0",
         "google-adk>=0.3.0",
         "firebase-admin>=6.5.0",
+        # Only used when MODEL_PROVIDER=nvidia, but must ship so the import works.
         "litellm>=1.50.0",
         "httpx>=0.27.0",
         "python-dotenv>=1.0.0",

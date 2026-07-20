@@ -20,7 +20,8 @@ the verified JWT / WhatsApp identity), never from model output. A central
 ``before_tool_callback`` fails closed if scope is missing, and logs tenantId /
 orgId / userId on every tool call.
 
-Model: NVIDIA NIM (GLM primary, MiniMax fallback) via LiteLlm.
+Model: Google Gemini via ADK's native support (Vertex AI on Agent Engine, or a
+GOOGLE_API_KEY locally).
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools.agent_tool import AgentTool
 
 from observability import before_tool, after_tool
@@ -79,18 +79,18 @@ from skills import (
     list_calendar_events,
 )
 
+# Gemini is served natively by ADK — via Vertex AI on Agent Engine (ADC, no key)
+# or via a GOOGLE_API_KEY locally. Flash is fast and strong at tool-calling;
+# flash-lite is the cheap fallback.
+_PRIMARY = os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
+_FALLBACK = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
+
+# NVIDIA NIM is retained as an alternate provider: set MODEL_PROVIDER=nvidia
+# (plus NVIDIA_API_KEY) to route through NIM via LiteLlm instead of Gemini.
+_PROVIDER = os.environ.get("MODEL_PROVIDER", "gemini").lower()
 _NVIDIA_BASE = "https://integrate.api.nvidia.com/v1"
-_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-# nemotron-super-49b stays consistently warm on NIM (~1s/call, vs 70b's 30-60s
-# cold starts) and is strong at tool-calling. It's a reasoning model, so we
-# disable its chain-of-thought with the documented "detailed thinking off"
-# directive (see create_agent) to keep replies clean. 70b is the quality fallback.
-_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b")
-_FALLBACK = os.environ.get("NVIDIA_FALLBACK_MODEL", "meta/llama-3.3-70b-instruct")
-
-
-def _make_model(model_id: str) -> LiteLlm:
-    return LiteLlm(model=f"openai/{model_id}", api_base=_NVIDIA_BASE, api_key=_API_KEY)
+_NVIDIA_KEY = os.environ.get("NVIDIA_API_KEY", "")
+_NVIDIA_PRIMARY = os.environ.get("NVIDIA_PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b")
 
 
 # --- Shared response-format contract (used by orchestrator + fallback) -------
@@ -308,19 +308,25 @@ def create_agent(model_id: str | None = None) -> Agent:
     """Build the Fello coordinator.
 
     Intentionally a single flat agent rather than orchestrator + sub-agents-as-
-    tools. On NVIDIA NIM each model call can cold-start (~30s), and nesting
-    sub-agents multiplied those calls into 2-3 minute turns. A flat agent keeps
-    one tool-calling loop — far more responsive — while retaining the full skill
-    set, including the decision-intelligence analytics tools.
+    tools. Nesting sub-agents multiplies model calls into multi-minute turns.
+    A flat agent keeps one tool-calling loop — far more responsive — while
+    retaining the full skill set, including the decision-intelligence analytics
+    tools.
     """
-    primary = model_id or _PRIMARY
-    # nemotron reasoning models emit chain-of-thought as output unless told not to.
     instruction = ORCHESTRATOR_PROMPT
-    if "nemotron" in primary.lower():
-        instruction = "detailed thinking off\n\n" + ORCHESTRATOR_PROMPT
+    if _PROVIDER == "nvidia":
+        from google.adk.models.lite_llm import LiteLlm
+
+        primary = model_id or _NVIDIA_PRIMARY
+        model = LiteLlm(model=f"openai/{primary}", api_base=_NVIDIA_BASE, api_key=_NVIDIA_KEY)
+        # nemotron reasoning models emit chain-of-thought unless told not to.
+        if "nemotron" in primary.lower():
+            instruction = "detailed thinking off\n\n" + ORCHESTRATOR_PROMPT
+    else:
+        model = model_id or _PRIMARY
     return Agent(
         name="fello_coordinator",
-        model=_make_model(primary),
+        model=model,
         description="Fello coordination + decision-intelligence agent.",
         instruction=instruction,
         tools=[
