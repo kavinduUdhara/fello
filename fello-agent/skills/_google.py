@@ -135,6 +135,19 @@ def get_project_drive_folder(project_id: str) -> str | None:
     return (doc.to_dict() or {}).get("driveRootFolderId")
 
 
+def get_org_drive_folder(org_id: str) -> str | None:
+    """Return ``organizations/{org_id}.driveRootFolderId``, or None if not set.
+
+    This is the org's own Drive root (see fello-backend/backend/src/drive-sync.js),
+    distinct from any single project's folder — files at the top of it that
+    don't match an active event's name are indexed with event_id 'org_root'.
+    """
+    doc = db().collection("organizations").document(org_id).get()
+    if not doc.exists:
+        return None
+    return (doc.to_dict() or {}).get("driveRootFolderId")
+
+
 def has_scope(org_id: str, scope_substring: str) -> bool:
     integ = get_integration(org_id) or {}
     scopes = integ.get("scopes") or []

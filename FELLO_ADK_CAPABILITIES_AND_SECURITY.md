@@ -153,7 +153,7 @@ CREATE TABLE documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id TEXT NOT NULL,
   tenant_id TEXT NOT NULL,
-  event_id TEXT NOT NULL,
+  event_id TEXT NOT NULL, -- 'org_root' for organization-level files not tied to any event (see drive-sync.js walkFolderTree)
   team_node_id TEXT NOT NULL,
   file_name TEXT NOT NULL,
   mime_type TEXT NOT NULL,
