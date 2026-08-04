@@ -57,7 +57,7 @@ _ORG_LEVEL = "org_root"
 # Weighted FTS, scoped to org + event. ts_rank exposes *why* a row matched, so a
 # result is always explainable — something a black-box vector score cannot give.
 _SEARCH_SQL = """
-    SELECT file_name, drive_file_id, document_type, description,
+    SELECT file_name, drive_file_id, document_type, description, mime_type,
            ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
     FROM documents
     WHERE org_id = %s AND event_id = %s
@@ -68,7 +68,7 @@ _SEARCH_SQL = """
 
 # Cross-event variant — only used when the user explicitly asks across events.
 _SEARCH_SQL_CROSS_EVENT = """
-    SELECT file_name, drive_file_id, document_type, description, event_id,
+    SELECT file_name, drive_file_id, document_type, description, event_id, mime_type,
            ts_rank(search_vector, plainto_tsquery('english', %s)) AS rank
     FROM documents
     WHERE org_id = %s
@@ -322,6 +322,21 @@ def find_document(
                 )
             except Exception as e:
                 index_error = str(e)
+
+    # Normalize document_type using mime_type if it is a standard Google Workspace file.
+    # This prevents the AI from being confused by AI-generated types like "form_response" or "other".
+    for row in indexed_rows:
+        mime = row.get("mime_type", "")
+        if mime == _GOOGLE_DOC_MIME:
+            row["document_type"] = "google_doc"
+        elif mime == _GOOGLE_SHEET_MIME:
+            row["document_type"] = "google_sheet"
+        elif mime == "application/vnd.google-apps.presentation":
+            row["document_type"] = "google_slides"
+        elif mime == "application/vnd.google-apps.form":
+            row["document_type"] = "google_form"
+        # we can drop mime_type before returning to avoid clutter
+        row.pop("mime_type", None)
 
     # Live Drive fallback — ONLY when the index came back with nothing. If the
     # index already found matches, trust it and skip the extra API round-trip;
