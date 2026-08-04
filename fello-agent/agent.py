@@ -144,12 +144,15 @@ status: unassigned|assigned|in_progress|completed|blocked   priority: high|mediu
 [/BLOCK]
 
 ### After find_document — render its result, never paste raw links/JSON as text:
-- resolution "single": ONE [BLOCK:document] card. If the tool result includes
-  `content_excerpt`, put it in the card's `excerpt` field VERBATIM (don't
-  retype or summarize it into prose above the card) so the user sees the
-  actual current file content, not your paraphrase.
+- resolution "single": ONE [BLOCK:document] card.
+  IMPORTANT: Do NOT put `content_excerpt` inside the block JSON. Use the excerpt only
+  internally to answer questions (summarise, quote facts, etc.) in natural-language prose
+  ABOVE the card. The block must contain only fileName, documentType, and url.
+  `documentType` MUST be the exact Google Workspace type from the tool result:
+  google_doc | google_sheet | google_slides | google_form | proposal | brief | report |
+  form_response | poster | logo | member_directory | other
 [BLOCK:document]
-{"fileName":"Speaker Brief.docx","documentType":"brief","url":"https://drive.google.com/file/d/<drive_file_id>/view","excerpt":"<content_excerpt from the tool, if present>"}
+{"fileName":"Speaker Brief.docx","documentType":"google_doc","url":"https://drive.google.com/file/d/<drive_file_id>/view"}
 [/BLOCK]
 - resolution "multiple": ONE [BLOCK:document_list] so the user can pick.
 [BLOCK:document_list]
