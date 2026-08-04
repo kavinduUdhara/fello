@@ -821,7 +821,18 @@ def read_google_doc(doc_id: str, tool_context: ToolContext) -> dict:
     def _call(token: str):
         return httpx.get(f"{_DOCS_API}/{doc_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
     
-    return _execute_with_token_fallback(tool_context, _call)
+    res = _execute_with_token_fallback(tool_context, _call)
+    if not res.get("success"):
+        return res
+    
+    parts = []
+    for el in res.get("data", {}).get("body", {}).get("content", []):
+        for elem in (el.get("paragraph") or {}).get("elements", []):
+            run = elem.get("textRun")
+            if run and run.get("content"):
+                parts.append(run["content"])
+    text = "".join(parts).strip()
+    return {"success": True, "text": text[:15000]}
 
 
 def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
@@ -842,7 +853,22 @@ def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
     def _call(token: str):
         return httpx.get(f"{_SHEETS_API}/{sheet_id}?includeGridData=true", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
     
-    return _execute_with_token_fallback(tool_context, _call)
+    res = _execute_with_token_fallback(tool_context, _call)
+    if not res.get("success"):
+        return res
+        
+    parts = []
+    for sheet in res.get("data", {}).get("sheets", []):
+        for row in sheet.get("data", [{}])[0].get("rowData", []):
+            row_vals = []
+            for val in row.get("values", []):
+                v = val.get("formattedValue")
+                if v:
+                    row_vals.append(v)
+            if row_vals:
+                parts.append(" | ".join(row_vals))
+    text = "\n".join(parts).strip()
+    return {"success": True, "text": text[:15000]}
 
 
 def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
@@ -863,5 +889,17 @@ def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
     def _call(token: str):
         return httpx.get(f"{_SLIDES_API}/{presentation_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
     
-    return _execute_with_token_fallback(tool_context, _call)
+    res = _execute_with_token_fallback(tool_context, _call)
+    if not res.get("success"):
+        return res
+        
+    parts = []
+    for slide in res.get("data", {}).get("slides", []):
+        for element in slide.get("pageElements", []):
+            if "shape" in element and "text" in element["shape"]:
+                for text_element in element["shape"]["text"].get("textElements", []):
+                    if "textRun" in text_element and "content" in text_element["textRun"]:
+                        parts.append(text_element["textRun"]["content"])
+    text = "".join(parts).strip()
+    return {"success": True, "text": text[:15000]}
 
