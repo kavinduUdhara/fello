@@ -758,13 +758,11 @@ def read_google_form(form_id: str, tool_context: ToolContext) -> dict:
 
     actor = identity(tool_context)
     project_id = resolve_event_id(tool_context)
-    if not project_id:
-        return {
-            "success": False,
-            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
-        }
+    if project_id:
+        token, terr = get_project_access_token(project_id, actor.org_id)
+    else:
+        token, terr = get_access_token(actor.org_id)
 
-    token, terr = get_project_access_token(project_id, actor.org_id)
     if terr:
         return {"success": False, "error": terr}
 
@@ -798,13 +796,11 @@ def read_google_doc(doc_id: str, tool_context: ToolContext) -> dict:
 
     actor = identity(tool_context)
     project_id = resolve_event_id(tool_context)
-    if not project_id:
-        return {
-            "success": False,
-            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
-        }
+    if project_id:
+        token, terr = get_project_access_token(project_id, actor.org_id)
+    else:
+        token, terr = get_access_token(actor.org_id)
 
-    token, terr = get_project_access_token(project_id, actor.org_id)
     if terr:
         return {"success": False, "error": terr}
 
@@ -838,13 +834,11 @@ def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
 
     actor = identity(tool_context)
     project_id = resolve_event_id(tool_context)
-    if not project_id:
-        return {
-            "success": False,
-            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
-        }
+    if project_id:
+        token, terr = get_project_access_token(project_id, actor.org_id)
+    else:
+        token, terr = get_access_token(actor.org_id)
 
-    token, terr = get_project_access_token(project_id, actor.org_id)
     if terr:
         return {"success": False, "error": terr}
 
@@ -878,13 +872,11 @@ def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
 
     actor = identity(tool_context)
     project_id = resolve_event_id(tool_context)
-    if not project_id:
-        return {
-            "success": False,
-            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
-        }
+    if project_id:
+        token, terr = get_project_access_token(project_id, actor.org_id)
+    else:
+        token, terr = get_access_token(actor.org_id)
 
-    token, terr = get_project_access_token(project_id, actor.org_id)
     if terr:
         return {"success": False, "error": terr}
 
