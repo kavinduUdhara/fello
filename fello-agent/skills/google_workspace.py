@@ -741,6 +741,47 @@ def _detail(e: Exception) -> str:
         return str(e)
 
 
+def _execute_with_token_fallback(
+    tool_context: ToolContext,
+    api_call,
+) -> dict:
+    actor = identity(tool_context)
+    project_id = resolve_event_id(tool_context)
+    
+    tokens = []
+    if project_id:
+        ptok, _ = get_project_access_token(project_id, actor.org_id)
+        if ptok:
+            tokens.append(ptok)
+            
+    otok, _ = get_access_token(actor.org_id)
+    if otok and otok not in tokens:
+        tokens.append(otok)
+        
+    if not tokens:
+        return {"success": False, "error": "No Google access token available (neither project nor org level)."}
+
+    last_err = None
+    for token in tokens:
+        try:
+            resp = api_call(token)
+            resp.raise_for_status()
+            return {"success": True, "data": resp.json()}
+        except Exception as e:
+            last_err = e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (401, 403, 404):
+                continue
+            if status == 400:
+                err_text = _detail(e).lower()
+                if "not a document" in err_text or "not a spreadsheet" in err_text or "not a presentation" in err_text or "not a form" in err_text:
+                    return {"success": False, "error": f"API error: This file appears to be a different type. Please use the correct read tool (e.g. read_google_sheet for spreadsheets). Detail: {_detail(e)}"}
+                break
+            break
+            
+    return {"success": False, "error": f"Google API error: {_detail(last_err)}"}
+
+
 def read_google_form(form_id: str, tool_context: ToolContext) -> dict:
     """Read a Google Form.
     
@@ -756,23 +797,10 @@ def read_google_form(form_id: str, tool_context: ToolContext) -> dict:
     if httpx is None:
         return {"success": False, "error": "HTTP client unavailable on the server."}
 
-    actor = identity(tool_context)
-    token, terr = get_access_token(actor.org_id)
-
-    if terr:
-        return {"success": False, "error": terr}
-
-    try:
-        hdrs = {"Authorization": f"Bearer {token}"}
-        resp = httpx.get(
-            f"{_FORMS_API}/{form_id}",
-            headers=hdrs,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        return {"success": True, "data": resp.json()}
-    except Exception as e:
-        return {"success": False, "error": f"Google Forms API error: {_detail(e)}"}
+    def _call(token: str):
+        return httpx.get(f"{_FORMS_API}/{form_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+    
+    return _execute_with_token_fallback(tool_context, _call)
 
 
 def read_google_doc(doc_id: str, tool_context: ToolContext) -> dict:
@@ -790,23 +818,10 @@ def read_google_doc(doc_id: str, tool_context: ToolContext) -> dict:
     if httpx is None:
         return {"success": False, "error": "HTTP client unavailable on the server."}
 
-    actor = identity(tool_context)
-    token, terr = get_access_token(actor.org_id)
-
-    if terr:
-        return {"success": False, "error": terr}
-
-    try:
-        hdrs = {"Authorization": f"Bearer {token}"}
-        resp = httpx.get(
-            f"{_DOCS_API}/{doc_id}",
-            headers=hdrs,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        return {"success": True, "data": resp.json()}
-    except Exception as e:
-        return {"success": False, "error": f"Google Docs API error: {_detail(e)}"}
+    def _call(token: str):
+        return httpx.get(f"{_DOCS_API}/{doc_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+    
+    return _execute_with_token_fallback(tool_context, _call)
 
 
 def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
@@ -824,23 +839,10 @@ def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
     if httpx is None:
         return {"success": False, "error": "HTTP client unavailable on the server."}
 
-    actor = identity(tool_context)
-    token, terr = get_access_token(actor.org_id)
-
-    if terr:
-        return {"success": False, "error": terr}
-
-    try:
-        hdrs = {"Authorization": f"Bearer {token}"}
-        resp = httpx.get(
-            f"{_SHEETS_API}/{sheet_id}?includeGridData=true",
-            headers=hdrs,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        return {"success": True, "data": resp.json()}
-    except Exception as e:
-        return {"success": False, "error": f"Google Sheets API error: {_detail(e)}"}
+    def _call(token: str):
+        return httpx.get(f"{_SHEETS_API}/{sheet_id}?includeGridData=true", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+    
+    return _execute_with_token_fallback(tool_context, _call)
 
 
 def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
@@ -858,21 +860,8 @@ def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
     if httpx is None:
         return {"success": False, "error": "HTTP client unavailable on the server."}
 
-    actor = identity(tool_context)
-    token, terr = get_access_token(actor.org_id)
-
-    if terr:
-        return {"success": False, "error": terr}
-
-    try:
-        hdrs = {"Authorization": f"Bearer {token}"}
-        resp = httpx.get(
-            f"{_SLIDES_API}/{presentation_id}",
-            headers=hdrs,
-            timeout=20.0,
-        )
-        resp.raise_for_status()
-        return {"success": True, "data": resp.json()}
-    except Exception as e:
-        return {"success": False, "error": f"Google Slides API error: {_detail(e)}"}
+    def _call(token: str):
+        return httpx.get(f"{_SLIDES_API}/{presentation_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+    
+    return _execute_with_token_fallback(tool_context, _call)
 
