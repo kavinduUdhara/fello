@@ -241,6 +241,47 @@ def _read_google_sheet_text(token: str, sheet_id: str) -> str | None:
         return None
 
 
+def _read_google_form_text(token: str, form_id: str) -> str | None:
+    """Fetch a Google Form's structure and responses via the Forms API."""
+    if httpx is None:
+        return None
+    try:
+        resp = httpx.get(
+            f"https://forms.googleapis.com/v1/forms/{form_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        form_data = resp.json()
+        parts = [f"Form Title: {form_data.get('info', {}).get('title', 'Untitled')}"]
+        
+        # Try to get responses
+        try:
+            r_resp = httpx.get(
+                f"https://forms.googleapis.com/v1/forms/{form_id}/responses",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=20.0,
+            )
+            if r_resp.status_code == 200:
+                resp_data = r_resp.json().get("responses", [])
+                parts.append(f"Total Responses: {len(resp_data)}")
+                for r in resp_data:
+                    ans_parts = []
+                    for qid, ans in r.get("answers", {}).items():
+                        text_ans = ans.get("textAnswers", {}).get("answers", [])
+                        if text_ans:
+                            ans_parts.append(text_ans[0].get("value", ""))
+                    if ans_parts:
+                        parts.append(" | ".join(ans_parts))
+        except Exception:
+            pass
+            
+        text = "\n".join(parts).strip()
+        return text[:_DOC_CONTENT_MAX_CHARS] if text else None
+    except Exception:
+        return None
+
+
 def _token_and_folder(evt: str, org_id: str) -> tuple[str | None, str | None]:
     """Resolve (access_token, drive_folder_id) for one search scope.
 
@@ -403,10 +444,14 @@ def find_document(
                     excerpt = _read_google_doc_text(token, doc_id)
                 elif doc_type == "google_sheet":
                     excerpt = _read_google_sheet_text(token, doc_id)
+                elif doc_type == "google_form":
+                    excerpt = _read_google_form_text(token, doc_id)
                 else:
                     excerpt = _read_google_doc_text(token, doc_id)
                     if not excerpt:
                         excerpt = _read_google_sheet_text(token, doc_id)
+                    if not excerpt:
+                        excerpt = _read_google_form_text(token, doc_id)
                 if excerpt:
                     result["content_excerpt"] = excerpt
 

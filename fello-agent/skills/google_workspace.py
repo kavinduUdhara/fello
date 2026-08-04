@@ -798,7 +798,23 @@ def read_google_form(form_id: str, tool_context: ToolContext) -> dict:
         return {"success": False, "error": "HTTP client unavailable on the server."}
 
     def _call(token: str):
-        return httpx.get(f"{_FORMS_API}/{form_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+        resp = httpx.get(f"{_FORMS_API}/{form_id}", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+        resp.raise_for_status()
+        form_data = resp.json()
+        
+        # Try to fetch responses if we have permission
+        try:
+            resp_data = httpx.get(f"{_FORMS_API}/{form_id}/responses", headers={"Authorization": f"Bearer {token}"}, timeout=20.0)
+            if resp_data.status_code == 200:
+                form_data["responses"] = resp_data.json().get("responses", [])
+        except Exception:
+            pass
+
+        class _MockResp:
+            def raise_for_status(self): pass
+            def json(self): return form_data
+            
+        return _MockResp()
     
     return _execute_with_token_fallback(tool_context, _call)
 
