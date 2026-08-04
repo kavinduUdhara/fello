@@ -41,7 +41,9 @@ except Exception:  # pragma: no cover
 
 _DRIVE_FILES_API = "https://www.googleapis.com/drive/v3/files"
 _DOCS_API = "https://docs.googleapis.com/v1/documents"
+_SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
 _GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
+_GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
 _DOC_CONTENT_MAX_CHARS = 4000
 
 # Sentinel event_id drive-sync.js assigns to files at the top of the org's
@@ -211,19 +213,43 @@ def _read_google_doc_text(token: str, doc_id: str) -> str | None:
         return None
 
 
+def _read_google_sheet_text(token: str, sheet_id: str) -> str | None:
+    """Fetch a Google Sheet's current text via the Sheets API."""
+    if httpx is None:
+        return None
+    try:
+        resp = httpx.get(
+            f"{_SHEETS_API}/{sheet_id}?includeGridData=true",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        parts = []
+        for sheet in data.get("sheets", []):
+            for row in sheet.get("data", [{}])[0].get("rowData", []):
+                row_vals = []
+                for val in row.get("values", []):
+                    v = val.get("formattedValue")
+                    if v:
+                        row_vals.append(v)
+                if row_vals:
+                    parts.append(" | ".join(row_vals))
+        text = "\n".join(parts).strip()
+        return text[:_DOC_CONTENT_MAX_CHARS] if text else None
+    except Exception:
+        return None
+
+
 def _token_and_folder(evt: str, org_id: str) -> tuple[str | None, str | None]:
     """Resolve (access_token, drive_folder_id) for one search scope.
 
-    `_ORG_LEVEL` uses the org's own Drive root + the org's Google grant;
-    any other value is a real project/event id and uses that project's
-    folder + Drive grant (falling back to the org's grant if the project
-    has none of its own — same rule create_google_doc etc. already use).
+    Uses the main organization's Google grant for access.
     """
+    token, _terr = get_access_token(org_id)
     if evt == _ORG_LEVEL:
-        token, _terr = get_access_token(org_id)
         folder_id = get_org_drive_folder(org_id) if token else None
     else:
-        token, _terr = get_project_access_token(evt, org_id)
         folder_id = get_project_drive_folder(evt) if token else None
     return token, folder_id
 
@@ -310,7 +336,7 @@ def find_document(
                     {
                         "file_name": f.get("name"),
                         "drive_file_id": f.get("id"),
-                        "document_type": "google_doc" if f.get("mimeType") == _GOOGLE_DOC_MIME else None,
+                        "document_type": "google_doc" if f.get("mimeType") == _GOOGLE_DOC_MIME else ("google_sheet" if f.get("mimeType") == _GOOGLE_SHEET_MIME else None),
                         "description": None,
                         "url": f.get("webViewLink"),
                         "rank": None,  # live results aren't ranked against the FTS score
@@ -347,16 +373,25 @@ def find_document(
         "resolution": "single" if strong_single else "multiple",
     }
 
-    # For the top match, try fetching live Google Doc content so the agent can
-    # quote/summarize the actual current text. We don't reliably know the mime
-    # type for indexed (Postgres) rows, so just attempt it — a non-Doc file
-    # cheaply fails via the Docs API and _read_google_doc_text swallows that.
+    # For the top match, try fetching live Google Doc/Sheet content so the agent
+    # can quote/summarize the actual current text. We don't reliably know the mime
+    # type for indexed (Postgres) rows, so just attempt both — a non-Doc/Sheet file
+    # cheaply fails via the APIs.
     if strong_single:
         doc_id = matches[0].get("drive_file_id")
+        doc_type = matches[0].get("document_type")
         if doc_id and evt:
             token, _folder_id = _token_and_folder(evt, actor.org_id)
             if token:
-                excerpt = _read_google_doc_text(token, doc_id)
+                excerpt = None
+                if doc_type == "google_doc":
+                    excerpt = _read_google_doc_text(token, doc_id)
+                elif doc_type == "google_sheet":
+                    excerpt = _read_google_sheet_text(token, doc_id)
+                else:
+                    excerpt = _read_google_doc_text(token, doc_id)
+                    if not excerpt:
+                        excerpt = _read_google_sheet_text(token, doc_id)
                 if excerpt:
                     result["content_excerpt"] = excerpt
 
