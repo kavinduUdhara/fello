@@ -33,7 +33,13 @@ def _expired(expires_at) -> bool:
         return True
     try:
         if isinstance(expires_at, (int, float)):
-            return time.time() >= float(expires_at) - 60
+            ts = float(expires_at)
+            # Firestore stores expiresAt as milliseconds since epoch — detect
+            # this by checking if the value is implausibly large as seconds
+            # (anything past year 3000 = 32503680000 seconds).
+            if ts > 32_503_680_000:
+                ts = ts / 1000.0
+            return time.time() >= ts - 60
         dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
         return datetime.now(timezone.utc) >= dt
     except Exception:
