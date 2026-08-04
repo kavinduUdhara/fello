@@ -739,3 +739,164 @@ def _detail(e: Exception) -> str:
         return e.response.text[:300]  # type: ignore[attr-defined]
     except Exception:
         return str(e)
+
+
+def read_google_form(form_id: str, tool_context: ToolContext) -> dict:
+    """Read a Google Form.
+    
+    Args:
+        form_id: The ID of the Google Form.
+        
+    Returns:
+        dict with success and form data, or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_DOCUMENTS_MANAGE)
+    if err:
+        return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+
+    actor = identity(tool_context)
+    project_id = resolve_event_id(tool_context)
+    if not project_id:
+        return {
+            "success": False,
+            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
+        }
+
+    token, terr = get_project_access_token(project_id, actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    try:
+        hdrs = {"Authorization": f"Bearer {token}"}
+        resp = httpx.get(
+            f"{_FORMS_API}/{form_id}",
+            headers=hdrs,
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        return {"success": True, "data": resp.json()}
+    except Exception as e:
+        return {"success": False, "error": f"Google Forms API error: {_detail(e)}"}
+
+
+def read_google_doc(doc_id: str, tool_context: ToolContext) -> dict:
+    """Read a Google Doc.
+    
+    Args:
+        doc_id: The ID of the Google Doc.
+        
+    Returns:
+        dict with success and document data, or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_DOCUMENTS_MANAGE)
+    if err:
+        return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+
+    actor = identity(tool_context)
+    project_id = resolve_event_id(tool_context)
+    if not project_id:
+        return {
+            "success": False,
+            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
+        }
+
+    token, terr = get_project_access_token(project_id, actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    try:
+        hdrs = {"Authorization": f"Bearer {token}"}
+        resp = httpx.get(
+            f"{_DOCS_API}/{doc_id}",
+            headers=hdrs,
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        return {"success": True, "data": resp.json()}
+    except Exception as e:
+        return {"success": False, "error": f"Google Docs API error: {_detail(e)}"}
+
+
+def read_google_sheet(sheet_id: str, tool_context: ToolContext) -> dict:
+    """Read a Google Sheet.
+    
+    Args:
+        sheet_id: The ID of the Google Sheet.
+        
+    Returns:
+        dict with success and spreadsheet data, or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_DOCUMENTS_MANAGE)
+    if err:
+        return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+
+    actor = identity(tool_context)
+    project_id = resolve_event_id(tool_context)
+    if not project_id:
+        return {
+            "success": False,
+            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
+        }
+
+    token, terr = get_project_access_token(project_id, actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    try:
+        hdrs = {"Authorization": f"Bearer {token}"}
+        resp = httpx.get(
+            f"{_SHEETS_API}/{sheet_id}?includeGridData=true",
+            headers=hdrs,
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        return {"success": True, "data": resp.json()}
+    except Exception as e:
+        return {"success": False, "error": f"Google Sheets API error: {_detail(e)}"}
+
+
+def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
+    """Read a Google Slides presentation.
+    
+    Args:
+        presentation_id: The ID of the Google Slides presentation.
+        
+    Returns:
+        dict with success and presentation data, or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_DOCUMENTS_MANAGE)
+    if err:
+        return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+
+    actor = identity(tool_context)
+    project_id = resolve_event_id(tool_context)
+    if not project_id:
+        return {
+            "success": False,
+            "error": "Which project is this for? I need a project in focus to know which Google grant to use.",
+        }
+
+    token, terr = get_project_access_token(project_id, actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    try:
+        hdrs = {"Authorization": f"Bearer {token}"}
+        resp = httpx.get(
+            f"{_SLIDES_API}/{presentation_id}",
+            headers=hdrs,
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+        return {"success": True, "data": resp.json()}
+    except Exception as e:
+        return {"success": False, "error": f"Google Slides API error: {_detail(e)}"}
+

@@ -74,8 +74,12 @@ from skills import (
     update_google_doc,
     create_google_sheet,
     update_google_sheet,
+    read_google_sheet,
     create_google_slides,
     update_google_slides,
+    read_google_slides,
+    read_google_doc,
+    read_google_form,
     create_calendar_event,
     list_calendar_events,
 )
@@ -269,10 +273,10 @@ never ask the user which folder to use. Route by user intent:
 
 | What the user asks for | Tool to call |
 |---|---|
-| form, registration, sign-up, survey, RSVP | `create_google_form` / `update_google_form` |
-| doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` |
-| spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` |
-| slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` |
+| form, registration, sign-up, survey, RSVP | `create_google_form` / `update_google_form` / `read_google_form` |
+| doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` / `read_google_doc` |
+| spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` / `read_google_sheet` |
+| slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` / `read_google_slides` |
 | "schedule a meeting", "book interview slots", "put it on the calendar", "send a calendar invite" | `create_calendar_event` (one call per slot; ISO times with timezone offset) |
 | "what's on the calendar", "any meetings this week" | `list_calendar_events` |
 | "add <name> to the org", "invite <email>", "add this person as a member" (one specific person named directly) | `invite_member` |
@@ -391,12 +395,16 @@ def create_agent(model_id: str | None = None) -> Agent:
             # Google Workspace (uses the org's/project's connected Google account)
             create_google_form,
             update_google_form,
+            read_google_form,
             create_google_doc,
             update_google_doc,
+            read_google_doc,
             create_google_sheet,
             update_google_sheet,
+            read_google_sheet,
             create_google_slides,
             update_google_slides,
+            read_google_slides,
             create_calendar_event,
             list_calendar_events,
         ],

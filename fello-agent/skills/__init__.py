@@ -48,10 +48,14 @@ from .google_workspace import (
     update_google_doc,
     create_google_sheet,
     update_google_sheet,
+    read_google_sheet,
     create_google_slides,
     update_google_slides,
+    read_google_slides,
     create_calendar_event,
     list_calendar_events,
+    read_google_doc,
+    read_google_form,
 )
 from .invites import (
     invite_member,
@@ -101,12 +105,16 @@ __all__ = [
     # google workspace
     "create_google_form",
     "update_google_form",
+    "read_google_form",
     "create_google_doc",
     "update_google_doc",
+    "read_google_doc",
     "create_google_sheet",
     "update_google_sheet",
+    "read_google_sheet",
     "create_google_slides",
     "update_google_slides",
+    "read_google_slides",
     "create_calendar_event",
     "list_calendar_events",
     # invites
