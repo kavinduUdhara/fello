@@ -156,17 +156,11 @@ def outreach_funnel(tool_context: ToolContext, event_id: str | None = None) -> d
     """Conversion funnel over logged outreach (contacted -> confirmed)."""
     actor = identity(tool_context)
     evt = resolve_event_id(tool_context, event_id)
-    if not evt:
-        return {"error": "No event specified."}
     try:
-        items = [
-            d.to_dict()
-            for d in db()
-            .collection("outreach")
-            .where("orgId", "==", actor.org_id)
-            .where("projectId", "==", evt)
-            .stream()
-        ]
+        q = db().collection("outreach").where("orgId", "==", actor.org_id)
+        if evt:
+            q = q.where("projectId", "==", evt)
+        items = [d.to_dict() for d in q.stream()]
     except Exception as e:
         return {"error": str(e)}
 

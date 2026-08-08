@@ -37,8 +37,8 @@ _env_vars = {
     # Gemini via Vertex AI — Agent Engine's own service account provides ADC,
     # so no API key is needed in production.
     "GOOGLE_GENAI_USE_VERTEXAI": "TRUE",
-    "GEMINI_PRIMARY_MODEL":    os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash"),
-    "GEMINI_FALLBACK_MODEL":   os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite"),
+    "GEMINI_PRIMARY_MODEL":    os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-pro"),
+    "GEMINI_FALLBACK_MODEL":   os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash"),
     # NVIDIA NIM alternate provider — set MODEL_PROVIDER=nvidia to use it.
     "MODEL_PROVIDER":          os.environ.get("MODEL_PROVIDER", ""),
     "NVIDIA_API_KEY":          os.environ.get("NVIDIA_API_KEY", ""),

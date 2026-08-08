@@ -56,6 +56,7 @@ from .google_workspace import (
     list_calendar_events,
     read_google_doc,
     read_google_form,
+    send_email,
 )
 from .invites import (
     invite_member,
@@ -117,6 +118,7 @@ __all__ = [
     "read_google_slides",
     "create_calendar_event",
     "list_calendar_events",
+    "send_email",
     # invites
     "invite_member",
     "invite_org_members",

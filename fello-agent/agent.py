@@ -82,13 +82,14 @@ from skills import (
     read_google_form,
     create_calendar_event,
     list_calendar_events,
+    send_email,
 )
 
 # Gemini is served natively by ADK — via Vertex AI on Agent Engine (ADC, no key)
-# or via a GOOGLE_API_KEY locally. Flash is fast and strong at tool-calling;
-# flash-lite is the cheap fallback.
-_PRIMARY = os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
-_FALLBACK = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
+# or via a GOOGLE_API_KEY locally. Gemini 2.5 Pro is the most capable reasoning
+# model for tool-calling, document cross-referencing, and coordination.
+_PRIMARY = os.environ.get("GEMINI_PRIMARY_MODEL", "gemini-2.5-pro")
+_FALLBACK = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
 
 # NVIDIA NIM is retained as an alternate provider: set MODEL_PROVIDER=nvidia
 # (plus NVIDIA_API_KEY) to route through NIM via LiteLlm instead of Gemini.
@@ -280,6 +281,7 @@ never ask the user which folder to use. Route by user intent:
 | doc, document, proposal, notes, write-up, letter, minutes | `create_google_doc` / `update_google_doc` / `read_google_doc` |
 | spreadsheet, budget, tracker, rows/columns to fill in | `create_google_sheet` / `update_google_sheet` / `read_google_sheet` |
 | slides, deck, presentation, pitch | `create_google_slides` / `update_google_slides` / `read_google_slides` |
+| "send an email to <person>", "email <name/role>", "congratulate <lead>" | `send_email` (look up their email via `find_document` / `read_google_sheet` / `list_members` first if needed) |
 | "schedule a meeting", "book interview slots", "put it on the calendar", "send a calendar invite" | `create_calendar_event` (one call per slot; ISO times with timezone offset) |
 | "what's on the calendar", "any meetings this week" | `list_calendar_events` |
 | "add <name> to the org", "invite <email>", "add this person as a member" (one specific person named directly) | `invite_member` |
@@ -289,9 +291,10 @@ never ask the user which folder to use. Route by user intent:
 | "email them the invite", "send invite emails", "notify the new members" (after invites already exist) | `send_org_invite_email` (one person) / `send_org_invite_emails` (a batch) |
 
 Use the matching `update_*` tool (never re-create) when the user references
-something they already made. Email is only ever sent through the invite tools
-(`invite_member`, `send_org_invite_email(s)`) — you have no general-purpose
-Gmail tool, and no Google tools beyond the ones listed above.
+something they already made. You can send general-purpose emails via the connected
+Gmail account using `send_email` (for welcoming team leads, sending congratulations,
+outreach, announcements, or updates). Invite notification emails are handled by
+`invite_member` or `send_org_invite_email(s)`.
 
 {_FORM_GUIDE}
 
@@ -318,11 +321,14 @@ Gmail tool, and no Google tools beyond the ones listed above.
   gateway already DM'd them an invite link automatically. Report those people
   as "sent an invite link to join" — never claim they were added directly,
   and never say there's no way to invite someone to an existing group.
-- **NEVER refuse to parse or extract information from a document.** If a user
-  asks you to use data (like emails) from a Google Sheet or document, you CAN
-  and MUST extract it yourself from the `content_excerpt` (returned by `find_document`)
-  or by calling a `read_*` tool. DO NOT ask the user to manually copy-paste it
-  for you.
+- **NEVER refuse to parse or extract information from a document, spreadsheet, or form.** If a user
+  asks you to check data (e.g. emails, registrations, speaker lists, form responses) from a Google Sheet,
+  Form, or Doc, you CAN and MUST search for the files using `find_document` and read them with `read_google_sheet`,
+  `read_google_form`, or `read_google_doc` (or use the `content_excerpt` returned by `find_document`).
+  `read_google_form` returns actual submitted responses. When asked to cross-reference or compare two files
+  (such as confirmed speakers vs form submissions), look up both files, read their contents, cross-reference
+  the entries by name/email, and give the user the exact count and list. NEVER say you cannot check form submissions
+  or cannot cross-reference documents. DO NOT ask the user to manually copy-paste data for you.
 - NEVER invent a document's title, link, or content. After `find_document`,
   only claim you found something when `resolution` is "single" or "multiple"
   AND `matches` is non-empty — copy the `file_name`/`drive_file_id`/`description`
@@ -342,6 +348,23 @@ Gmail tool, and no Google tools beyond the ones listed above.
   its `emailed`/`whatsapp_sent` fields and surface any `email_error`/
   `whatsapp_error` plainly (e.g. no Google account connected, or an invalid
   phone number) rather than claiming success anyway.
+- **Sending Emails directly:** You CAN and MUST send emails directly via Gmail using the `send_email` tool.
+  When the user asks you to send an email to a role or person (e.g. "send an email to design team lead of the OC congrating and welcoming them to the position"):
+  1. Find their details/email by searching relevant files with `find_document` (e.g. search "OC Details", "Organizing Committee", "OC members") and reading them with `read_google_sheet` or `content_excerpt`, or checking `list_members`.
+  2. Call `send_email(to_email=..., subject=..., body=...)` to send the email directly in the same workflow.
+  3. When sending a congratulations/welcome email to the Design Team Lead (or other OC leads), use this format and wording:
+     Subject: "Congratulations - Selection as Design Team Lead for Path to Internship 2026"
+     Body:
+     "Congratulations.
+
+We are delighted to inform you that you have been selected as the Design Team Lead for Path to Internship 2026 (5th Edition), organized by the IEEE IAS Student Branch Chapter of SLIIT and the IEEE Student Branch of SLIIT.
+
+Your skills, dedication, and leadership potential stood out during the selection process, and we are confident in your ability to successfully lead the Design Team. In this role, you will oversee visual content creation and ensure consistency in branding across all event materials.
+
+Best regards,
+Path to Internship Organizing Committee"
+  4. Confirm to the user that the email has been sent to the recipient with the subject.
+  NEVER refuse or claim you cannot send emails directly from the connected account.
 - If the user names someone to add/remove but doesn't give an email, ask for
   it — email is required to invite or remove someone, never guess one.
 """
@@ -415,6 +438,7 @@ def create_agent(model_id: str | None = None) -> Agent:
             read_google_slides,
             create_calendar_event,
             list_calendar_events,
+            send_email,
         ],
         before_tool_callback=before_tool,
         after_tool_callback=after_tool,

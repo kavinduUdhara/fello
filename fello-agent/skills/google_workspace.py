@@ -14,6 +14,8 @@ import authz
 from context import identity, resolve_event_id
 from ._google import get_access_token, get_project_access_token, get_project_drive_folder
 
+import base64
+
 try:
     import httpx
 except Exception:  # pragma: no cover
@@ -25,6 +27,7 @@ _DOCS_API         = "https://docs.googleapis.com/v1/documents"
 _SHEETS_API       = "https://sheets.googleapis.com/v4/spreadsheets"
 _SLIDES_API       = "https://slides.googleapis.com/v1/presentations"
 _DRIVE_FILES_API  = "https://www.googleapis.com/drive/v3/files"
+_GMAIL_SEND_API   = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
 
 def create_google_form(
@@ -918,4 +921,67 @@ def read_google_slides(presentation_id: str, tool_context: ToolContext) -> dict:
                         parts.append(text_element["textRun"]["content"])
     text = "".join(parts).strip()
     return {"success": True, "text": text[:15000]}
+
+
+def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    tool_context: ToolContext,
+) -> dict:
+    """Send an email to a recipient via the organization's connected Gmail account.
+
+    Use this when the user asks to send an email to anyone (such as team leads,
+    members, volunteers, speakers, sponsors, or partners) for welcoming,
+    congratulating, updating, or communicating with them.
+
+    Args:
+        to_email: Recipient email address (e.g. "lead@example.com").
+        subject: The email subject line.
+        body: The plain text email body content.
+
+    Returns:
+        dict with success (bool), sent_to (str), and subject (str), or an error.
+    """
+    err = authz.require(tool_context, authz.CAP_MEMBERS_MANAGE)
+    if err:
+        err2 = authz.require(tool_context, authz.CAP_DOCUMENTS_MANAGE)
+        if err2:
+            return {"success": False, "error": err}
+    if httpx is None:
+        return {"success": False, "error": "HTTP client unavailable on the server."}
+    if not to_email or not subject or not body:
+        return {"success": False, "error": "to_email, subject, and body are all required."}
+
+    actor = identity(tool_context)
+    token, terr = get_access_token(actor.org_id)
+    if terr:
+        project_id = resolve_event_id(tool_context)
+        if project_id:
+            token, terr = get_project_access_token(project_id, actor.org_id)
+    if terr:
+        return {"success": False, "error": terr}
+
+    raw = "\r\n".join(
+        [
+            f"To: {to_email.strip()}",
+            f"Subject: {subject}",
+            "Content-Type: text/plain; charset=UTF-8",
+            "",
+            body,
+        ]
+    )
+    encoded = base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+    try:
+        res = httpx.post(
+            _GMAIL_SEND_API,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"raw": encoded},
+            timeout=20.0,
+        )
+        res.raise_for_status()
+        return {"success": True, "sent_to": to_email.strip(), "subject": subject}
+    except Exception as e:
+        return {"success": False, "error": f"Gmail send failed: {_detail(e)}"}
+
 
